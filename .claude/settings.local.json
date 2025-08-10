@@ -70,7 +70,14 @@
       "Bash(git push:*)",
       "mcp__ide__getDiagnostics",
       "Bash(DATABASE_URL=\"postgresql://erp_admin:erp_secure_password_change_in_production@localhost:5432/erp_main\" cargo check -p erp-auth --tests --message-format=short)",
-      "Bash(DATABASE_URL=\"postgresql://erp_admin:erp_secure_password_change_in_production@localhost:5432/erp_main\" timeout 30s cargo check -p erp-auth --tests --message-format=short)"
+      "Bash(DATABASE_URL=\"postgresql://erp_admin:erp_secure_password_change_in_production@localhost:5432/erp_main\" timeout 30s cargo check -p erp-auth --tests --message-format=short)",
+      "Bash(DATABASE_URL=\"postgresql://erp_admin:erp_secure_password_change_in_production@localhost:5432/erp_main\" timeout 300 cargo build --all --release)",
+      "Bash(DATABASE_URL=\"postgresql://erp_admin:erp_secure_password_change_in_production@localhost:5432/erp_main\" timeout 600 cargo build --all --release)",
+      "Bash(DATABASE_URL=\"postgresql://erp_admin:erp_secure_password_change_in_production@localhost:5432/erp_main\" cargo test password_validation --lib)",
+      "Bash(DATABASE_URL=\"postgresql://erp_admin:erp_secure_password_change_in_production@localhost:5432/erp_main\" cargo doc --no-deps --workspace)",
+      "Bash(DATABASE_URL=\"postgresql://erp_admin:erp_secure_password_change_in_production@localhost:5432/erp_main\" cargo run --release --bin erp-server -- --help)",
+      "Bash(DATABASE_URL=\"postgresql://test:test@localhost:5432/test\" cargo check --all)",
+      "Bash(DATABASE_URL=\"postgresql://test:test@localhost:5432/test\" cargo check --all --message-format=short)"
     ],
     "deny": []
   }

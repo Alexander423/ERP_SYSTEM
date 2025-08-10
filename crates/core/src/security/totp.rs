@@ -1,5 +1,7 @@
 use crate::{error::Result, Error};
 use totp_rs::{Algorithm, Secret, TOTP};
+use rand::rngs::OsRng;
+use rand::RngCore;
 
 #[derive(Debug, Clone)]
 pub struct TotpService {
@@ -13,7 +15,12 @@ impl TotpService {
 
     pub fn generate_secret(&self) -> Result<String> {
         use totp_rs::Secret;
-        let secret = Secret::Raw(vec![0u8; 20]); // Dummy 20-byte secret
+        
+        // Generate cryptographically secure random 32-byte secret
+        let mut secret_bytes = vec![0u8; 32];
+        OsRng.fill_bytes(&mut secret_bytes);
+        
+        let secret = Secret::Raw(secret_bytes);
         Ok(secret.to_string())
     }
 
@@ -48,11 +55,11 @@ impl TotpService {
 
     pub fn generate_backup_codes(&self, count: usize) -> Result<Vec<String>> {
         use rand::Rng;
-        let mut rng = rand::thread_rng();
         let mut codes = Vec::new();
         
         for _ in 0..count {
-            let code: u32 = rng.gen_range(100000..999999);
+            // Use cryptographically secure RNG for backup codes
+            let code: u32 = OsRng.gen_range(100000..999999);
             codes.push(format!("{:06}", code));
         }
         

@@ -299,8 +299,29 @@ impl SessionManager {
         let pattern = format!("session:{}:*", tenant.tenant_id.0);
         let mut conn = self.redis.clone();
 
-        // In production, use SCAN instead of KEYS for better performance
-        let session_keys: Vec<String> = conn.keys(&pattern).await?;
+        // Use SCAN instead of KEYS to avoid blocking Redis
+        let mut session_keys = Vec::new();
+        let mut cursor = 0;
+        const SCAN_BATCH_SIZE: usize = 100;
+
+        loop {
+            let (new_cursor, keys): (u64, Vec<String>) = redis::cmd("SCAN")
+                .arg(cursor)
+                .arg("MATCH")
+                .arg(&pattern)
+                .arg("COUNT")
+                .arg(SCAN_BATCH_SIZE)
+                .query_async(&mut conn)
+                .await?;
+
+            session_keys.extend(keys);
+            cursor = new_cursor;
+            
+            if cursor == 0 {
+                break;
+            }
+        }
+
         let mut cleaned_up = 0;
 
         for session_key in session_keys {

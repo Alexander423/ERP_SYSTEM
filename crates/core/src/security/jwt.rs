@@ -20,6 +20,16 @@ pub struct RefreshTokenClaims {
     pub token_version: u32,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionTokenClaims {
+    pub sub: String, // user_id
+    pub tenant_id: String,
+    pub exp: i64,
+    pub iat: i64,
+    pub jti: String,
+    pub purpose: String,
+}
+
 #[derive(Clone)]
 pub struct JwtService {
     encoding_key: EncodingKey,
@@ -111,17 +121,33 @@ impl JwtService {
         let now = Utc::now();
         let exp = now + Duration::minutes(5);
 
-        let claims = serde_json::json!({
-            "sub": user_id,
-            "tenant_id": tenant_id,
-            "exp": exp.timestamp(),
-            "iat": now.timestamp(),
-            "jti": Uuid::new_v4().to_string(),
-            "purpose": "2fa_verification"
-        });
+        let claims = SessionTokenClaims {
+            sub: user_id.to_string(),
+            tenant_id: tenant_id.to_string(),
+            exp: exp.timestamp(),
+            iat: now.timestamp(),
+            jti: Uuid::new_v4().to_string(),
+            purpose: "2fa_verification".to_string(),
+        };
 
         let header = Header::new(Algorithm::HS512);
         encode(&header, &claims, &self.encoding_key)
             .map_err(|e| Error::new(crate::error::ErrorCode::TokenInvalid, format!("Failed to generate session token: {}", e)))
+    }
+
+    pub fn verify_session_token(&self, token: &str) -> Result<SessionTokenClaims> {
+        let mut validation = Validation::new(Algorithm::HS512);
+        validation.set_audience(&["api"]);
+        validation.set_issuer(&["auth-service"]);
+
+        let token_data = decode::<SessionTokenClaims>(token, &self.decoding_key, &validation)
+            .map_err(|e| Error::new(crate::error::ErrorCode::TokenInvalid, format!("Invalid session token: {}", e)))?;
+
+        // Verify purpose is for 2FA verification
+        if token_data.claims.purpose != "2fa_verification" {
+            return Err(Error::new(crate::error::ErrorCode::TokenInvalid, "Invalid token purpose"));
+        }
+
+        Ok(token_data.claims)
     }
 }

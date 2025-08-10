@@ -604,7 +604,7 @@ impl AuthService {
         request.validate().map_err(|e| Error::validation(e.to_string()))?;
 
         let session_claims = self.jwt_service
-            .verify_access_token(&request.login_session_token)?;
+            .verify_session_token(&request.login_session_token)?;
 
         let tenant_id = Uuid::parse_str(&session_claims.tenant_id)
             .map_err(|_| Error::new(erp_core::ErrorCode::TokenInvalid, "Invalid tenant ID in token"))?;

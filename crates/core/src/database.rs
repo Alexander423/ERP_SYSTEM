@@ -50,7 +50,7 @@
 //!     .await?;
 //! ```
 
-use crate::{config::DatabaseConfig, error::Result, TenantContext};
+use crate::{config::DatabaseConfig, error::Result, Error, TenantContext};
 use dashmap::DashMap;
 use sqlx::{postgres::PgPoolOptions, PgPool};
 use std::sync::Arc;
@@ -230,10 +230,44 @@ impl DatabasePool {
         Ok(pool)
     }
 
+    /// Validates schema name to prevent SQL injection
+    /// Only allows safe characters: a-zA-Z0-9_ and must start with letter/underscore
+    fn validate_schema_name(schema_name: &str) -> Result<()> {
+        // Check length constraints (PostgreSQL limit: 63 characters)
+        if schema_name.is_empty() || schema_name.len() > 63 {
+            return Err(Error::validation("Schema name must be 1-63 characters long"));
+        }
+
+        // Check first character: must be letter or underscore
+        let first_char = schema_name.chars().next().unwrap();
+        if !first_char.is_ascii_alphabetic() && first_char != '_' {
+            return Err(Error::validation("Schema name must start with letter or underscore"));
+        }
+
+        // Check all characters: only alphanumeric and underscore allowed
+        if !schema_name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+            return Err(Error::validation("Schema name can only contain letters, numbers, and underscores"));
+        }
+
+        // Reject PostgreSQL reserved words and dangerous patterns
+        let reserved_words = ["public", "information_schema", "pg_catalog", "pg_toast"];
+        if reserved_words.contains(&schema_name.to_lowercase().as_str()) {
+            return Err(Error::validation("Schema name cannot be a PostgreSQL reserved word"));
+        }
+
+        Ok(())
+    }
+
     pub async fn create_tenant_schema(&self, schema_name: &str) -> Result<()> {
+        // SECURITY: Validate schema name to prevent SQL injection
+        Self::validate_schema_name(schema_name)?;
+        
         info!("Creating tenant schema: {}", schema_name);
 
-        sqlx::query(&format!("CREATE SCHEMA IF NOT EXISTS {}", schema_name))
+        // Use parameterized query - but PostgreSQL doesn't support parameters for DDL
+        // So we validate the schema name strictly and use format as fallback
+        let sql = format!("CREATE SCHEMA IF NOT EXISTS \"{}\"", schema_name);
+        sqlx::query(&sql)
             .execute(&self.main_pool)
             .await?;
 
@@ -241,7 +275,8 @@ impl DatabasePool {
         let queries: Vec<&str> = setup_sql.split(';').filter(|s| !s.trim().is_empty()).collect();
 
         for query in queries {
-            let formatted_query = query.replace("{{schema}}", schema_name);
+            // SECURITY: Schema name is already validated, but quote it for extra safety
+            let formatted_query = query.replace("{{schema}}", &format!("\"{}\"", schema_name));
             sqlx::query(&formatted_query)
                 .execute(&self.main_pool)
                 .await
@@ -256,11 +291,16 @@ impl DatabasePool {
     }
 
     pub async fn drop_tenant_schema(&self, schema_name: &str) -> Result<()> {
+        // SECURITY: Validate schema name to prevent SQL injection
+        Self::validate_schema_name(schema_name)?;
+        
         info!("Dropping tenant schema: {}", schema_name);
         
         self.tenant_pools.remove(schema_name);
         
-        sqlx::query(&format!("DROP SCHEMA IF EXISTS {} CASCADE", schema_name))
+        // Use quoted identifier to prevent SQL injection
+        let sql = format!("DROP SCHEMA IF EXISTS \"{}\" CASCADE", schema_name);
+        sqlx::query(&sql)
             .execute(&self.main_pool)
             .await?;
 

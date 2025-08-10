@@ -1,0 +1,65 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: erp_postgres
+    environment:
+      POSTGRES_USER: erp_admin
+      POSTGRES_PASSWORD: erp_secure_password_change_in_production
+      POSTGRES_DB: erp_main
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./migrations/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U erp_admin -d erp_main"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - erp_network
+
+  redis:
+    image: redis:7-alpine
+    container_name: erp_redis
+    command: redis-server --appendonly yes --requirepass redis_secure_password_change_in_production
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - erp_network
+
+  # Optional: pgAdmin for database management
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: erp_pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@erp.local
+      PGADMIN_DEFAULT_PASSWORD: pgadmin_password_change_in_production
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+    networks:
+      - erp_network
+    profiles:
+      - debug
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  erp_network:
+    driver: bridge

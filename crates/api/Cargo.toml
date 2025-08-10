@@ -1,0 +1,47 @@
+[package]
+name = "erp-api"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "erp-server"
+path = "src/main.rs"
+
+
+[dependencies]
+# Internal
+erp-core = { path = "../core", features = ["axum"] }
+erp-auth = { path = "../auth" }
+
+# Async runtime
+tokio.workspace = true
+
+# Web framework
+axum.workspace = true
+axum-extra.workspace = true
+tower.workspace = true
+tower-http.workspace = true
+hyper.workspace = true
+
+# Database
+sqlx.workspace = true
+redis.workspace = true
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+
+# Utils
+uuid.workspace = true
+chrono.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+config.workspace = true
+
+# OpenAPI
+utoipa.workspace = true
+utoipa-swagger-ui.workspace = true

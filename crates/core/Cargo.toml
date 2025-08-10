@@ -1,0 +1,49 @@
+[package]
+name = "erp-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+# Async runtime
+tokio.workspace = true
+
+# Database
+sqlx.workspace = true
+redis.workspace = true
+dashmap.workspace = true
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+
+# Security
+argon2.workspace = true
+jsonwebtoken.workspace = true
+aes-gcm.workspace = true
+rand.workspace = true
+
+# Utils
+uuid.workspace = true
+chrono.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+config.workspace = true
+once_cell.workspace = true
+async-trait.workspace = true
+validator.workspace = true
+base64.workspace = true
+totp-rs.workspace = true
+regex.workspace = true
+
+# HTTP Framework (for RequestContext extractor)
+axum = { workspace = true, optional = true }
+
+# Metrics
+prometheus = { version = "0.13", features = ["process"] }
+
+[features]
+default = []
+axum = ["dep:axum"]

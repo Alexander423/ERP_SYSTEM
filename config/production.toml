@@ -1,0 +1,109 @@
+# ERP System - Production Configuration
+# SECURITY: All sensitive values MUST be provided via environment variables
+
+[app]
+company_name = "ERP System"
+base_url = "ERROR_BASE_URL_NOT_SET_CHECK_ENVIRONMENT_VARIABLES"  # REQUIRED: No default for production
+environment = "production"
+log_level = "info"
+enable_registration = false  # Disable public registration in production
+enable_2fa = true
+enable_email_verification = true
+
+[server]
+host = "0.0.0.0"
+port = 3000
+workers = 8
+
+[database]
+# PRODUCTION: DATABASE_URL environment variable REQUIRED (no fallback)
+url = "ERROR_DATABASE_URL_NOT_SET_CHECK_ENVIRONMENT_VARIABLES"
+max_connections = 20
+min_connections = 5
+
+[redis]
+# PRODUCTION: REDIS_URL environment variable REQUIRED (no fallback)
+url = "ERROR_REDIS_URL_NOT_SET_CHECK_ENVIRONMENT_VARIABLES"
+max_connections = 20
+
+[jwt]
+# PRODUCTION: JWT_SECRET environment variable REQUIRED (no fallback)
+# Generate with: openssl rand -base64 32
+secret = "ERROR_JWT_SECRET_NOT_SET_CHECK_ENVIRONMENT_VARIABLES"
+access_token_expiry = 1800     # 30 minutes for production
+refresh_token_expiry = 604800  # 7 days for production
+
+[security]
+# Production-strength Argon2 parameters
+argon2_memory_cost = 131072    # 128 MB
+argon2_time_cost = 4
+argon2_parallelism = 4
+# PRODUCTION: AES_ENCRYPTION_KEY environment variable REQUIRED (exactly 32 chars)
+aes_encryption_key = "ERROR_AES_KEY_NOT_SET_CHECK_ENV_VARS"
+
+# Enhanced rate limiting for production
+[rate_limit]
+requests_per_minute = 30
+burst_size = 5
+
+[email]
+provider = "smtp"
+smtp_host = "ERROR_SMTP_HOST_NOT_SET_CHECK_ENVIRONMENT_VARIABLES"
+smtp_port = 587
+smtp_username = "ERROR_SMTP_USERNAME_NOT_SET_CHECK_ENVIRONMENT_VARIABLES"
+smtp_password = "ERROR_SMTP_PASSWORD_NOT_SET_CHECK_ENVIRONMENT_VARIABLES"
+smtp_from_email = "ERROR_SMTP_FROM_EMAIL_NOT_SET_CHECK_ENVIRONMENT_VARIABLES"
+smtp_from_name = "ERP System"
+use_tls = true
+use_starttls = true
+timeout_seconds = 30
+max_retries = 3
+
+[metrics]
+enabled = true
+port = 9090
+path = "/metrics"
+namespace = "erp_system"
+
+[cors]
+# Restricted CORS for production
+allowed_origins = ["ERROR_FRONTEND_URL_NOT_SET_CHECK_ENVIRONMENT_VARIABLES"]  # Single origin for production
+allowed_methods = ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+allowed_headers = ["authorization", "content-type", "x-request-id"]
+expose_headers = ["x-request-id"]
+max_age = 3600
+allow_credentials = true
+
+# Production security settings
+[security.headers]
+enable_hsts = true
+hsts_max_age = 31536000  # 1 year
+enable_csp = true
+enable_xss_protection = true
+enable_frame_deny = true
+enable_content_type_nosniff = true
+
+# Session security
+[security.sessions]
+session_timeout = 1800      # 30 minutes
+absolute_timeout = 43200    # 12 hours
+cleanup_interval = 300      # 5 minutes
+secure_cookies = true
+same_site = "Strict"
+
+# Account security
+[security.accounts]
+max_login_attempts = 5
+lockout_duration = 900      # 15 minutes
+password_min_length = 12
+require_password_complexity = true
+password_history_count = 12
+force_password_change_days = 90
+
+# Audit logging
+[audit]
+enabled = true
+log_level = "info"
+retention_days = 2555  # 7 years for compliance
+include_request_bodies = false
+include_response_bodies = false

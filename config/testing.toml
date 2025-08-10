@@ -1,0 +1,51 @@
+# ERP System - Testing Configuration
+
+[app]
+base_url = "http://localhost:3001"
+environment = "testing"
+log_level = "warn"
+
+[server]
+port = 3001
+workers = 2
+
+[database]
+# Testing fallback (override with DATABASE_URL environment variable)
+url = "postgresql://erp_test:test_password@localhost:5432/erp_test"
+max_connections = 3
+min_connections = 1
+
+[redis]
+# Testing fallback (override with REDIS_URL environment variable)
+url = "redis://localhost:6380"  # Different port for testing
+max_connections = 3
+
+[jwt]
+# Testing fallback (override with JWT_SECRET environment variable)
+secret = "test-jwt-secret-for-tests-only-32-chars-min"
+access_token_expiry = 300     # 5 minutes for quick tests
+refresh_token_expiry = 900    # 15 minutes for quick tests
+
+[security]
+argon2_memory_cost = 16384    # 16 MB for faster tests
+argon2_time_cost = 1
+argon2_parallelism = 1
+
+[rate_limit]
+requests_per_minute = 1000    # Relaxed for testing
+burst_size = 100
+
+[email]
+provider = "mock"  # Always mock for tests
+smtp_from_email = "test@localhost"
+
+[metrics]
+enabled = false  # Disabled for testing
+
+[cors]
+allowed_origins = ["http://localhost:3001", "http://127.0.0.1:3001"]
+allowed_methods = ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"]
+allowed_headers = ["authorization", "content-type", "x-request-id", "accept", "x-test-header"]
+expose_headers = ["x-request-id", "x-test-response"]
+max_age = 300  # 5 minutes for faster test cycles
+allow_credentials = true

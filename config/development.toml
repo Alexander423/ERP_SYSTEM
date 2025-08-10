@@ -1,0 +1,36 @@
+# ERP System - Development Configuration
+
+[app]
+base_url = "http://localhost:3000"
+log_level = "debug"
+
+[database]
+# Development fallback (override with DATABASE_URL environment variable)
+url = "postgresql://erp_dev:dev_password@localhost:5432/erp_dev"
+max_connections = 5
+min_connections = 1
+
+[jwt]
+# Development fallback (override with JWT_SECRET environment variable)
+secret = "dev-jwt-secret-not-secure-for-production-only-32-chars"
+access_token_expiry = 7200    # 2 hours for development
+
+[security]
+argon2_memory_cost = 32768    # 32 MB for faster dev cycles
+argon2_time_cost = 2
+
+[email]
+provider = "mock"  # Always use mock in development
+smtp_from_email = "dev@localhost"
+
+[metrics]
+enabled = true
+port = 9091
+
+[cors]
+allowed_origins = ["*"]  # Permissive for development
+allowed_methods = ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"]
+allowed_headers = ["*"]
+expose_headers = ["x-request-id", "x-response-time"]
+max_age = 86400  # 24 hours
+allow_credentials = true

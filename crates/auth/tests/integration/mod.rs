@@ -1,0 +1,9 @@
+pub mod common;
+pub mod registration_test;
+pub mod login_test;
+pub mod password_reset_test;
+pub mod email_verification_test;
+pub mod user_management_test;
+pub mod role_management_test;
+pub mod authorization_test;
+pub mod role_assignment_test;

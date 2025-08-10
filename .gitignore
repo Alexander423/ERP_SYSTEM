@@ -1,0 +1,49 @@
+# Rust
+/target/
+**/*.rs.bk
+Cargo.lock
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Environment files
+.env
+.env.local
+.env.production
+.env.staging
+
+# Logs
+*.log
+
+# Database
+*.db
+*.sqlite
+
+# Coverage reports
+/target/tarpaulin-report.html
+/coverage/
+
+# Node modules (if any frontend tools are used)
+node_modules/
+
+# Docker
+.docker/
+
+# Temporary files
+tmp/
+temp/
+
+# SQLx
+.sqlx/

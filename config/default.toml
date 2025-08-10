@@ -1,0 +1,68 @@
+# ERP System - Default Configuration
+
+[app]
+company_name = "ERP System"
+base_url = "https://localhost:3000"
+environment = "development"
+log_level = "info"
+enable_registration = true
+enable_2fa = true
+enable_email_verification = true
+
+[server]
+host = "127.0.0.1"
+port = 3000
+workers = 4
+
+[database]
+# Default fallback (override with DATABASE_URL environment variable)
+url = "postgresql://erp_user:CHANGE_THIS_PASSWORD@localhost:5432/erp_system"
+max_connections = 10
+min_connections = 2
+
+[redis]
+# Default fallback (override with REDIS_URL environment variable)
+url = "redis://localhost:6379"
+max_connections = 10
+
+[jwt]
+# INSECURE DEFAULT - MUST set JWT_SECRET environment variable in production
+# Generate with: openssl rand -base64 32
+secret = "INSECURE_DEFAULT_JWT_SECRET_CHANGE_IN_PRODUCTION_MIN_32_CHARS"
+access_token_expiry = 3600    # 1 hour
+refresh_token_expiry = 2592000 # 30 days
+
+[security]
+argon2_memory_cost = 65536    # 64 MB
+argon2_time_cost = 3
+argon2_parallelism = 2
+# INSECURE DEFAULT - MUST set AES_ENCRYPTION_KEY environment variable (exactly 32 chars)
+# Generate with: openssl rand -base64 32 | cut -c1-32
+aes_encryption_key = "INSECURE_DEFAULT_32_CHAR_KEY_CHG!"
+
+[rate_limit]
+requests_per_minute = 60
+burst_size = 10
+
+[email]
+provider = "mock"  # mock, smtp, sendgrid, aws_ses
+smtp_from_email = "noreply@localhost"
+smtp_from_name = "ERP System"
+use_tls = false
+use_starttls = true
+timeout_seconds = 30
+max_retries = 3
+
+[metrics]
+enabled = false
+port = 9090
+path = "/metrics"
+namespace = "erp_system"
+
+[cors]
+allowed_origins = ["http://localhost:3000", "https://localhost:3000"]
+allowed_methods = ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+allowed_headers = ["authorization", "content-type", "x-request-id", "accept"]
+expose_headers = ["x-request-id"]
+max_age = 3600
+allow_credentials = true

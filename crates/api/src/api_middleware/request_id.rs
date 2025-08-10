@@ -367,7 +367,7 @@ mod tests {
 
     #[test]
     fn test_client_ip_extraction() {
-        let mut request = Request::builder()
+        let request = Request::builder()
             .uri("/")
             .header("x-forwarded-for", "203.0.113.1, 70.41.3.18, 150.172.238.178")
             .body(Body::empty())

@@ -38,7 +38,7 @@ argon2_time_cost = 3
 argon2_parallelism = 2
 # INSECURE DEFAULT - MUST set AES_ENCRYPTION_KEY environment variable (exactly 32 chars)
 # Generate with: openssl rand -base64 32 | cut -c1-32
-aes_encryption_key = "INSECURE_DEFAULT_32_CHAR_KEY_CHG!"
+aes_encryption_key = "INSECURE_DEFAULT_32_CHAR_KEY_CHG"
 
 [rate_limit]
 requests_per_minute = 60

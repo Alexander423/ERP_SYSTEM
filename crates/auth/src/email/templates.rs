@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 /// Base trait for email templates
 pub trait EmailTemplate: Send + Sync {

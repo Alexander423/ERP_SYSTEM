@@ -287,8 +287,6 @@ pub struct CleanupServiceHealth {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::session::{SessionConfig, SessionManager};
-    use redis::aio::ConnectionManager;
 
     #[tokio::test]
     async fn test_cleanup_service_creation() {

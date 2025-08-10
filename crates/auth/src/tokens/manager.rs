@@ -5,10 +5,8 @@ use erp_core::{
     DatabasePool, TenantContext,
 };
 use redis::{aio::ConnectionManager, AsyncCommands};
-use sqlx::PgPool;
 use std::collections::HashMap;
-use std::sync::Arc;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 /// Token manager for handling verification tokens
@@ -433,7 +431,7 @@ impl TokenManager {
         let serialized = serde_json::to_string(token_data)
             .map_err(|e| Error::new(ErrorCode::SerializationError, e.to_string()))?;
 
-        conn.set_ex(&cache_key, serialized, ttl as u64).await?;
+        conn.set_ex::<_, _, ()>(&cache_key, serialized, ttl as u64).await?;
         debug!("Cached token: {} with TTL: {}s", token_data.token, ttl);
         Ok(())
     }

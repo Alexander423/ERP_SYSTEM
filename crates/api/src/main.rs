@@ -47,7 +47,6 @@
 //! - **Docs**: http://localhost:3000/swagger-ui
 
 use axum::{
-    middleware,
     Router,
     http::StatusCode,
     response::IntoResponse,
@@ -59,8 +58,8 @@ use redis::aio::ConnectionManager;
 use std::{net::SocketAddr, sync::Arc};
 use tower::ServiceBuilder;
 use tower_http::{
-    compression::{CompressionLayer, Compression},
-    cors::{CorsLayer, Any, AllowOrigin},
+    compression::CompressionLayer,
+    cors::{CorsLayer, Any},
     trace::{DefaultMakeSpan, DefaultOnRequest, DefaultOnResponse, TraceLayer},
 };
 use axum::http::{Method, HeaderName, HeaderValue};
@@ -221,7 +220,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn create_app(state: AppState, auth_service: Arc<AuthService>) -> Result<Router, Box<dyn std::error::Error>> {
+fn create_app(state: AppState, _auth_service: Arc<AuthService>) -> Result<Router, Box<dyn std::error::Error>> {
     // OpenAPI documentation
     #[derive(OpenApi)]
     #[openapi(

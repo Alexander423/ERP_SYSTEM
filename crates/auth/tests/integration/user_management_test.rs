@@ -1,20 +1,18 @@
 use super::common::{TestContext, init_test_logging};
 use axum::{
     body::Body,
-    http::{Request, StatusCode, header},
-    middleware::from_fn_with_state,
+    http::{Request, StatusCode},
+    middleware::{from_fn_with_state, from_fn},
     Router,
     routing::get,
 };
 use erp_auth::{
     dto::*,
     middleware::{auth_middleware, AuthState, require_permission},
-    handlers::SharedAuthService,
 };
-use erp_core::{Error, RequestContext, TenantContext, TenantId};
-use serde_json::json;
+use erp_core::{TenantContext, TenantId};
 use std::sync::Arc;
-use tower::{ServiceExt, Service};
+use tower::ServiceExt;
 use uuid::Uuid;
 
 #[tokio::test]
@@ -114,10 +112,9 @@ async fn test_create_user_with_permissions() {
     
     let invite_request = InviteUserRequest {
         email: "newuser@example.com".to_string(),
-        first_name: "New".to_string(),
-        last_name: "User".to_string(),
+        first_name: Some("New".to_string()),
+        last_name: Some("User".to_string()),
         role_ids: vec![],
-        send_invitation: false,
     };
     
     // Make authenticated request
@@ -152,10 +149,9 @@ async fn test_create_user_without_permissions() {
     
     let invite_request = InviteUserRequest {
         email: "newuser@example.com".to_string(),
-        first_name: "New".to_string(),
-        last_name: "User".to_string(),
+        first_name: Some("New".to_string()),
+        last_name: Some("User".to_string()),
         role_ids: vec![],
-        send_invitation: false,
     };
     
     // Make authenticated request without proper permissions
@@ -250,7 +246,7 @@ async fn test_multi_tenant_isolation() {
     
     // Create users in different tenants
     let user1 = create_test_admin_user(&ctx1).await;
-    let user2 = create_test_admin_user(&ctx2).await;
+    let _user2 = create_test_admin_user(&ctx2).await;
     
     // Generate token for user1 with ctx1 tenant
     let token1 = generate_test_jwt(&ctx1, user1.id, vec!["users:read".to_string()]).await;
@@ -286,7 +282,7 @@ async fn create_test_user(ctx: &TestContext, email: &str) -> erp_auth::models::U
     };
     
     ctx.auth_service
-        .repository
+        .repository()
         .create_user(
             &tenant_context,
             email,
@@ -305,7 +301,7 @@ async fn create_test_admin_user(ctx: &TestContext) -> erp_auth::models::User {
     };
     
     let user = ctx.auth_service
-        .repository
+        .repository()
         .create_user(
             &tenant_context,
             "admin@example.com",
@@ -318,13 +314,13 @@ async fn create_test_admin_user(ctx: &TestContext) -> erp_auth::models::User {
     
     // Create admin role and assign it
     let admin_role = ctx.auth_service
-        .repository
+        .repository()
         .create_role(&tenant_context, "admin", Some("Administrator role"), true)
         .await
         .expect("Failed to create admin role");
     
     ctx.auth_service
-        .repository
+        .repository()
         .assign_role_to_user(&tenant_context, user.id, admin_role.id)
         .await
         .expect("Failed to assign admin role");
@@ -355,7 +351,7 @@ async fn generate_test_jwt(ctx: &TestContext, user_id: Uuid, permissions: Vec<St
 
 async fn create_auth_state(ctx: &TestContext) -> AuthState {
     AuthState {
-        jwt_service: ctx.auth_service.jwt_service.clone(),
+        jwt_service: ctx.auth_service.jwt_service().clone(),
         db: Arc::new(ctx.db.clone()),
         redis: ctx.redis.clone(),
     }

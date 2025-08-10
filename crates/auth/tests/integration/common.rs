@@ -18,7 +18,7 @@ impl TestContext {
         let config = Config::load().expect("Failed to load test config");
 
         // Initialize database
-        let db = DatabasePool::new(&config.database.url)
+        let db = DatabasePool::new(config.database.clone())
             .await
             .expect("Failed to connect to test database");
 
@@ -68,4 +68,14 @@ pub fn init_test_logging() {
         .with_env_filter(EnvFilter::from_default_env().add_directive("auth=debug".parse().unwrap()))
         .with_test_writer()
         .try_init();
+}
+
+pub async fn create_auth_service() -> Arc<AuthService> {
+    let ctx = TestContext::new().await;
+    ctx.auth_service
+}
+
+pub async fn setup_test_db() -> DatabasePool {
+    let ctx = TestContext::new().await;
+    ctx.db
 }

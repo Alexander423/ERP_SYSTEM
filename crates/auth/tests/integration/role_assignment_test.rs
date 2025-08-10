@@ -1,10 +1,10 @@
 use super::common::{TestContext, init_test_logging};
 use axum::{
     body::Body,
-    http::{Request, StatusCode, header},
-    middleware::from_fn_with_state,
+    http::{Request, StatusCode},
+    middleware::{from_fn_with_state},
     Router,
-    routing::{get, post, delete},
+    routing::{post},
 };
 use erp_auth::{
     dto::*,
@@ -12,7 +12,6 @@ use erp_auth::{
     models::{User, Role},
 };
 use erp_core::{TenantContext, TenantId};
-use serde_json::json;
 use std::sync::Arc;
 use tower::ServiceExt;
 use uuid::Uuid;
@@ -48,7 +47,7 @@ async fn test_assign_roles_to_user_with_permissions() {
     assert_eq!(response.status(), StatusCode::NO_CONTENT);
     
     // Verify role assignment in database
-    let user_roles = ctx.auth_service.repository.get_user_roles(
+    let user_roles = ctx.auth_service.repository().get_user_roles(
         &TenantContext {
             tenant_id: TenantId(ctx.tenant_id),
             schema_name: format!("test_tenant_{}", ctx.tenant_id),
@@ -76,7 +75,7 @@ async fn test_remove_roles_from_user_with_permissions() {
         tenant_id: TenantId(ctx.tenant_id),
         schema_name: format!("test_tenant_{}", ctx.tenant_id),
     };
-    ctx.auth_service.repository.assign_role_to_user(&tenant_context, target_user.id, test_role.id)
+    ctx.auth_service.repository().assign_role_to_user(&tenant_context, target_user.id, test_role.id)
         .await.expect("Failed to assign role");
     
     let token = generate_test_jwt(&ctx, admin_user.id, vec!["users:assign_roles".to_string()]).await;
@@ -100,7 +99,7 @@ async fn test_remove_roles_from_user_with_permissions() {
     assert_eq!(response.status(), StatusCode::NO_CONTENT);
     
     // Verify role removal in database
-    let user_roles = ctx.auth_service.repository.get_user_roles(&tenant_context, target_user.id)
+    let user_roles = ctx.auth_service.repository().get_user_roles(&tenant_context, target_user.id)
         .await.expect("Failed to get user roles");
     
     assert!(!user_roles.iter().any(|r| r.id == test_role.id));
@@ -201,7 +200,8 @@ async fn test_disable_2fa_for_user() {
     let app = create_test_router(auth_state);
     
     // Generate a valid TOTP code
-    let current_code = ctx.auth_service.totp_service.generate_code(&enable_response.secret);
+    let current_code = ctx.auth_service.totp_service().generate_code(&enable_response.secret)
+        .expect("Failed to generate TOTP code");
     
     let disable_request = Disable2FARequest {
         code: current_code,
@@ -228,7 +228,7 @@ async fn test_disable_2fa_for_user() {
     assert!(!disable_response.message.is_empty());
     
     // Verify 2FA is disabled in database
-    let is_enabled = ctx.auth_service.repository.is_2fa_enabled(&tenant_context, target_user.id)
+    let is_enabled = ctx.auth_service.repository().is_2fa_enabled(&tenant_context, target_user.id)
         .await.expect("Failed to check 2FA status");
     
     assert!(!is_enabled);
@@ -317,7 +317,7 @@ async fn create_test_user(ctx: &TestContext, email: &str) -> User {
     };
     
     ctx.auth_service
-        .repository
+        .repository()
         .create_user(
             &tenant_context,
             email,
@@ -336,7 +336,7 @@ async fn create_test_admin_user(ctx: &TestContext) -> User {
     };
     
     let user = ctx.auth_service
-        .repository
+        .repository()
         .create_user(
             &tenant_context,
             &format!("admin_{}@example.com", Uuid::new_v4()),
@@ -348,13 +348,13 @@ async fn create_test_admin_user(ctx: &TestContext) -> User {
         .expect("Failed to create admin user");
     
     let admin_role = ctx.auth_service
-        .repository
+        .repository()
         .create_role(&tenant_context, "admin", Some("Administrator role"), true)
         .await
         .expect("Failed to create admin role");
     
     ctx.auth_service
-        .repository
+        .repository()
         .assign_role_to_user(&tenant_context, user.id, admin_role.id)
         .await
         .expect("Failed to assign admin role");
@@ -369,7 +369,7 @@ async fn create_test_role(ctx: &TestContext, name: &str, description: &str) -> R
     };
     
     ctx.auth_service
-        .repository
+        .repository()
         .create_role(&tenant_context, name, Some(description), true)
         .await
         .expect("Failed to create test role")
@@ -417,7 +417,7 @@ async fn generate_impersonation_jwt(ctx: &TestContext, user_id: Uuid, impersonat
 
 async fn create_auth_state(ctx: &TestContext) -> AuthState {
     AuthState {
-        jwt_service: ctx.auth_service.jwt_service.clone(),
+        jwt_service: ctx.auth_service.jwt_service().clone(),
         db: Arc::new(ctx.db.clone()),
         redis: ctx.redis.clone(),
     }

@@ -8,12 +8,11 @@ use erp_core::{
     jobs::JobQueue,
     DatabasePool, TenantContext,
 };
-use argon2::{password_hash::SaltString, Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
+use argon2::{password_hash::SaltString, Argon2, PasswordHasher};
 use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
-use uuid::Uuid;
 
 /// Configuration for password reset workflow
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -461,7 +460,7 @@ mod tests {
         
         // Test validation logic directly
         let validate = |password: &str| -> bool {
-            password.len() >= config.min_password_length
+            password.len() >= config.min_password_length.into()
                 && password.chars().any(|c| c.is_uppercase())
                 && password.chars().any(|c| c.is_lowercase())
                 && password.chars().any(|c| c.is_numeric())
@@ -496,8 +495,10 @@ mod tests {
         assert!(!validate_email("test@"));
     }
 
+    #[allow(dead_code)]
     struct MockJobQueue;
     impl MockJobQueue {
+        #[allow(dead_code)]
         fn new() -> Self { Self }
     }
     
@@ -524,8 +525,8 @@ mod tests {
             Ok(true)
         }
         
-        async fn get_stats(&self) -> Result<erp_core::jobs::QueueStats> {
-            Ok(erp_core::jobs::QueueStats::default())
+        async fn get_stats(&self) -> Result<erp_core::jobs::traits::QueueStats> {
+            Ok(erp_core::jobs::traits::QueueStats::default())
         }
         
         async fn cleanup_old_jobs(&self, _older_than: chrono::DateTime<chrono::Utc>) -> Result<u64> {

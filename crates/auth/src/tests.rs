@@ -1,8 +1,8 @@
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::dto::*;
     use crate::models::*;
+    use erp_core::{TenantStatus, AuditEventType};
     use validator::Validate;
     use uuid::Uuid;
 

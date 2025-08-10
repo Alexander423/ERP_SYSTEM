@@ -251,7 +251,7 @@ impl AuditBackend for DatabaseAuditRepository {
         Ok(events)
     }
 
-    async fn count_events(&self, filter: &AuditFilter) -> Result<u64> {
+    async fn count_events(&self, _filter: &AuditFilter) -> Result<u64> {
         // Similar to retrieve_events but with COUNT query
         let sql = format!("SELECT COUNT(*) FROM {}", self.table_name);
         

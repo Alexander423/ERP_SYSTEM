@@ -1,6 +1,7 @@
 use crate::{error::Result, Error};
 use totp_rs::{Algorithm, Secret, TOTP};
 
+#[derive(Debug, Clone)]
 pub struct TotpService {
     issuer: String,
 }
@@ -17,7 +18,7 @@ impl TotpService {
     }
 
     pub fn generate_qr_code(&self, secret: &str, email: &str) -> Result<String> {
-        let totp = self.create_totp(secret, email)?;
+        let _totp = self.create_totp(secret, email)?;
         
         // Generate QR URL manually
         let qr_url = format!(
@@ -38,6 +39,13 @@ impl TotpService {
             .map_err(|e| Error::internal(format!("TOTP verification error: {}", e)))?)
     }
 
+    pub fn generate_code(&self, secret: &str) -> Result<String> {
+        let totp = self.create_totp(secret, "")?;
+        
+        totp.generate_current()
+            .map_err(|e| Error::internal(format!("TOTP code generation error: {}", e)))
+    }
+
     pub fn generate_backup_codes(&self, count: usize) -> Result<Vec<String>> {
         use rand::Rng;
         let mut rng = rand::thread_rng();
@@ -51,7 +59,7 @@ impl TotpService {
         Ok(codes)
     }
 
-    fn create_totp(&self, secret: &str, account_name: &str) -> Result<TOTP> {
+    fn create_totp(&self, secret: &str, _account_name: &str) -> Result<TOTP> {
         let secret = Secret::Encoded(secret.to_string())
             .to_bytes()
             .map_err(|e| Error::internal(format!("Invalid TOTP secret: {}", e)))?;

@@ -2,6 +2,7 @@
 mod unit_tests {
     use crate::dto::*;
     use crate::models::*;
+    use erp_core::TenantStatus;
     use validator::Validate;
     use uuid::Uuid;
 

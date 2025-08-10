@@ -97,7 +97,7 @@ impl JobExecutor {
 
     /// Start the executor (non-blocking)
     pub async fn start(&mut self) -> Result<()> {
-        let (shutdown_tx, mut shutdown_rx) = mpsc::channel(1);
+        let (shutdown_tx, shutdown_rx) = mpsc::channel(1);
         self.shutdown_tx = Some(shutdown_tx);
 
         let queue = Arc::clone(&self.queue);
@@ -408,9 +408,10 @@ pub struct ExecutorMetricsSnapshot {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::jobs::{traits::JobHandler, types::JobPriority};
+    use crate::jobs::traits::JobHandler;
     use async_trait::async_trait;
 
+    #[allow(dead_code)]
     struct TestJobHandler;
 
     #[async_trait]

@@ -1,13 +1,12 @@
 use super::common::{TestContext, init_test_logging};
 use axum::{
     body::Body,
-    http::{Request, StatusCode, header},
-    middleware::from_fn_with_state,
+    http::{Request, StatusCode},
+    middleware::{from_fn_with_state, from_fn},
     Router,
     routing::get,
 };
 use erp_auth::{
-    dto::*,
     middleware::{auth_middleware, AuthState, require_permission},
     models::{User, Role},
 };
@@ -219,7 +218,7 @@ async fn test_multi_tenant_isolation_comprehensive() {
         (token3.clone(), ctx3.tenant_id, role3.id, true),  // User3 -> Tenant3 data: OK
     ];
     
-    for (token, tenant_id, role_id, should_succeed) in scenarios {
+    for (token, tenant_id, _role_id, should_succeed) in scenarios {
         // Use the auth state from the correct tenant context
         let auth_state = if tenant_id == ctx1.tenant_id {
             create_auth_state(&ctx1).await
@@ -378,7 +377,7 @@ async fn test_request_context_population() {
         let tenant_context = ctx.tenant_context.unwrap();
         let user_id = ctx.user_id.unwrap();
         
-        assert_eq!(tenant_context.tenant_id.0, ctx.tenant_context.unwrap().tenant_id.0);
+        assert_eq!(tenant_context.tenant_id.0, tenant_context.tenant_id.0);
         
         axum::Json(json!({
             "tenant_id": tenant_context.tenant_id.0,
@@ -417,7 +416,7 @@ async fn create_test_user(ctx: &TestContext, email: &str) -> User {
     };
     
     ctx.auth_service
-        .repository
+        .repository()
         .create_user(
             &tenant_context,
             email,
@@ -436,7 +435,7 @@ async fn create_test_admin_user(ctx: &TestContext) -> User {
     };
     
     let user = ctx.auth_service
-        .repository
+        .repository()
         .create_user(
             &tenant_context,
             &format!("admin_{}@example.com", Uuid::new_v4()),
@@ -448,13 +447,13 @@ async fn create_test_admin_user(ctx: &TestContext) -> User {
         .expect("Failed to create admin user");
     
     let admin_role = ctx.auth_service
-        .repository
+        .repository()
         .create_role(&tenant_context, "admin", Some("Administrator role"), true)
         .await
         .expect("Failed to create admin role");
     
     ctx.auth_service
-        .repository
+        .repository()
         .assign_role_to_user(&tenant_context, user.id, admin_role.id)
         .await
         .expect("Failed to assign admin role");
@@ -469,7 +468,7 @@ async fn create_test_role(ctx: &TestContext, name: &str, description: &str) -> R
     };
     
     ctx.auth_service
-        .repository
+        .repository()
         .create_role(&tenant_context, name, Some(description), true)
         .await
         .expect("Failed to create test role")
@@ -557,7 +556,7 @@ async fn revoke_token(ctx: &TestContext, jti: &str) {
 
 async fn create_auth_state(ctx: &TestContext) -> AuthState {
     AuthState {
-        jwt_service: ctx.auth_service.jwt_service.clone(),
+        jwt_service: ctx.auth_service.jwt_service().clone(),
         db: Arc::new(ctx.db.clone()),
         redis: ctx.redis.clone(),
     }

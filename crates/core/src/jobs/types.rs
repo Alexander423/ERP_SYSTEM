@@ -176,7 +176,7 @@ pub trait SerializableJob: Send + Sync {
     /// Get delay before retry (in seconds)
     fn retry_delay(&self, attempt: u32) -> u64 {
         // Exponential backoff: 2^attempt seconds (max 300 seconds = 5 minutes)
-        (2_u64.pow(attempt).min(300))
+        2_u64.pow(attempt).min(300)
     }
     
     /// Get scheduled execution time (for delayed jobs)

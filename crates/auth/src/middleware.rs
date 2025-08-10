@@ -1,5 +1,4 @@
 use axum::{
-    body::Body,
     extract::{Request, State},
     http::{header::AUTHORIZATION, StatusCode},
     middleware::Next,
@@ -111,36 +110,42 @@ pub async fn auth_middleware(
     Ok(next.run(request).await)
 }
 
-pub async fn require_permission(
-    required_permission: &'static str,
-) -> impl Fn(Request, Next) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Response, StatusCode>> + Send>> + Clone {
-    let perm = required_permission.to_string();
-    
+pub async fn require_permission_middleware(
+    required_permission: String,
+    request: Request,
+    next: Next,
+) -> Result<Response, StatusCode> {
+    let context = match request.extensions().get::<RequestContext>() {
+        Some(ctx) => ctx,
+        None => {
+            error!("Request context not found in require_permission middleware");
+            return Ok(StatusCode::INTERNAL_SERVER_ERROR.into_response());
+        }
+    };
+
+    let has_permission = context.permissions.iter().any(|p| p.to_string() == required_permission);
+
+    if !has_permission {
+        warn!(
+            "User {:?} lacks required permission: {}",
+            context.user_id, required_permission
+        );
+        return Ok(forbidden_response(&format!(
+            "Missing required permission: {}",
+            required_permission
+        )));
+    }
+
+    Ok(next.run(request).await)
+}
+
+// Helper for creating permission middleware closures
+pub fn require_permission(perm: &str) -> impl Fn(Request, Next) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Response, StatusCode>> + Send>> + Clone {
+    let permission = perm.to_string();
     move |request: Request, next: Next| {
-        let perm = perm.clone();
+        let perm_clone = permission.clone();
         Box::pin(async move {
-            let context = match request.extensions().get::<RequestContext>() {
-                Some(ctx) => ctx,
-                None => {
-                    error!("Request context not found in require_permission middleware");
-                    return Ok(StatusCode::INTERNAL_SERVER_ERROR.into_response());
-                }
-            };
-
-            let has_permission = context.permissions.iter().any(|p| p.to_string() == perm);
-
-            if !has_permission {
-                warn!(
-                    "User {:?} lacks required permission: {}",
-                    context.user_id, perm
-                );
-                return Ok(forbidden_response(&format!(
-                    "Missing required permission: {}",
-                    perm
-                )));
-            }
-
-            Ok(next.run(request).await)
+            require_permission_middleware(perm_clone, request, next).await
         })
     }
 }

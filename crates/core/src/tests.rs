@@ -1,6 +1,5 @@
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::security::*;
     use crate::config::*;
     use crate::{Permission, TenantId};

@@ -40,11 +40,10 @@
 //! 
 //! let app = Router::new()
 //!     .route("/api", get(handler))
-//!     .layer(RequestIdMiddleware::layer());
+//!     .layer(axum::middleware::from_fn(request_id_middleware));
 //! ```
 
 use axum::{
-    body::Body,
     extract::Request,
     http::{header::HeaderValue, HeaderName, StatusCode},
     middleware::Next,
@@ -84,9 +83,15 @@ pub const REQUEST_ID_HEADER: &str = "x-request-id";
 /// - **IP Extraction**: Real client IPs extracted from trusted proxy headers
 /// - **No PII Leakage**: Request IDs don't contain sensitive information
 /// - **Header Sanitization**: Invalid headers are rejected safely
+#[allow(dead_code)]
 pub struct RequestIdMiddleware;
 
 impl RequestIdMiddleware {
+    #[allow(dead_code)]
+    pub fn new() -> Self {
+        Self
+    }
+    
 }
 
 /// Middleware function that handles request ID generation and injection
@@ -239,6 +244,7 @@ fn is_valid_ip(ip: &str) -> bool {
 }
 
 /// Extension trait to easily get request ID from extensions
+#[allow(dead_code)]
 pub trait RequestIdExt {
     fn request_id(&self) -> Option<&str>;
     fn request_context(&self) -> Option<&RequestContext>;
@@ -271,14 +277,14 @@ macro_rules! log_with_request_id {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::{http::StatusCode, routing::get, Router};
+    use axum::{body::Body, http::StatusCode, routing::get, Router};
     use tower::ServiceExt;
 
     #[tokio::test]
     async fn test_request_id_generation() {
         let app = Router::new()
             .route("/", get(|| async { "OK" }))
-            .layer(RequestIdMiddleware::layer());
+            .layer(axum::middleware::from_fn(request_id_middleware));
 
         let response = app
             .oneshot(
@@ -306,7 +312,7 @@ mod tests {
         
         let app = Router::new()
             .route("/", get(|| async { "OK" }))
-            .layer(RequestIdMiddleware::layer());
+            .layer(axum::middleware::from_fn(request_id_middleware));
 
         let response = app
             .oneshot(

@@ -1,7 +1,6 @@
-use crate::models::{Permission, Role, Tenant, User, UserRole};
+use crate::models::{Permission, Role, Tenant, User};
 use chrono::{DateTime, Utc};
 use erp_core::{DatabasePool, Error, Result, TenantContext};
-use sqlx::PgPool;
 use uuid::Uuid;
 
 #[derive(Clone)]
@@ -402,17 +401,17 @@ impl AuthRepository {
         
         let mut query = "UPDATE users SET updated_at = CURRENT_TIMESTAMP".to_string();
         
-        if let Some(first_name) = &request.first_name {
+        if let Some(_first_name) = &request.first_name {
             update_parts.push(format!(", first_name = ${}", bind_index));
             bind_index += 1;
         }
         
-        if let Some(last_name) = &request.last_name {
+        if let Some(_last_name) = &request.last_name {
             update_parts.push(format!(", last_name = ${}", bind_index));
             bind_index += 1;
         }
         
-        if let Some(is_active) = request.is_active {
+        if let Some(_is_active) = request.is_active {
             update_parts.push(format!(", is_active = ${}", bind_index));
             bind_index += 1;
         }
@@ -557,12 +556,12 @@ impl AuthRepository {
         
         let mut query = "UPDATE roles SET updated_at = CURRENT_TIMESTAMP".to_string();
         
-        if let Some(name) = &request.name {
+        if let Some(_name) = &request.name {
             update_parts.push(format!(", name = ${}", bind_index));
             bind_index += 1;
         }
         
-        if let Some(description) = &request.description {
+        if let Some(_description) = &request.description {
             update_parts.push(format!(", description = ${}", bind_index));
             bind_index += 1;
         }

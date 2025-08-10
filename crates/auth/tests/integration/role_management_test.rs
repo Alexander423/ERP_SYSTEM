@@ -1,8 +1,8 @@
 use super::common::{TestContext, init_test_logging};
 use axum::{
     body::Body,
-    http::{Request, StatusCode, header},
-    middleware::from_fn_with_state,
+    http::{Request, StatusCode},
+    middleware::{from_fn_with_state, from_fn},
     Router,
     routing::get,
 };
@@ -12,7 +12,6 @@ use erp_auth::{
     models::Role,
 };
 use erp_core::{TenantContext, TenantId};
-use serde_json::json;
 use std::sync::Arc;
 use tower::ServiceExt;
 use uuid::Uuid;
@@ -167,6 +166,7 @@ async fn test_update_role_with_permissions() {
     let update_request = UpdateRoleRequest {
         name: Some("updated_role".to_string()),
         description: Some("Updated description".to_string()),
+        permission_ids: Some(vec![]),
     };
     
     // Make authenticated request
@@ -355,7 +355,7 @@ async fn create_test_user(ctx: &TestContext, email: &str) -> erp_auth::models::U
     };
     
     ctx.auth_service
-        .repository
+        .repository()
         .create_user(
             &tenant_context,
             email,
@@ -374,7 +374,7 @@ async fn create_test_admin_user(ctx: &TestContext) -> erp_auth::models::User {
     };
     
     let user = ctx.auth_service
-        .repository
+        .repository()
         .create_user(
             &tenant_context,
             "admin@example.com",
@@ -387,13 +387,13 @@ async fn create_test_admin_user(ctx: &TestContext) -> erp_auth::models::User {
     
     // Create admin role and assign it
     let admin_role = ctx.auth_service
-        .repository
+        .repository()
         .create_role(&tenant_context, "admin", Some("Administrator role"), true)
         .await
         .expect("Failed to create admin role");
     
     ctx.auth_service
-        .repository
+        .repository()
         .assign_role_to_user(&tenant_context, user.id, admin_role.id)
         .await
         .expect("Failed to assign admin role");
@@ -408,7 +408,7 @@ async fn create_test_role(ctx: &TestContext, name: &str, description: &str) -> R
     };
     
     ctx.auth_service
-        .repository
+        .repository()
         .create_role(&tenant_context, name, Some(description), true)
         .await
         .expect("Failed to create test role")
@@ -437,7 +437,7 @@ async fn generate_test_jwt(ctx: &TestContext, user_id: Uuid, permissions: Vec<St
 
 async fn create_auth_state(ctx: &TestContext) -> AuthState {
     AuthState {
-        jwt_service: ctx.auth_service.jwt_service.clone(),
+        jwt_service: ctx.auth_service.jwt_service().clone(),
         db: Arc::new(ctx.db.clone()),
         redis: ctx.redis.clone(),
     }

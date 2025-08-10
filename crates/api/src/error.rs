@@ -12,6 +12,7 @@ use tracing::{error, warn};
 /// 
 /// This wrapper ensures that sensitive information is never exposed in API responses,
 /// while still providing useful debugging information in logs and development environments.
+#[allow(dead_code)]
 #[derive(Debug)]
 pub struct ApiError {
     error: Error,
@@ -31,6 +32,7 @@ impl ApiError {
     }
 
     /// Create a new API error with explicit environment
+    #[allow(dead_code)]
     pub fn new_with_environment(error: Error, environment: String) -> Self {
         Self {
             error,
@@ -40,6 +42,7 @@ impl ApiError {
     }
 
     /// Add request ID for correlation and debugging
+    #[allow(dead_code)]
     pub fn with_request_id(mut self, request_id: String) -> Self {
         self.request_id = Some(request_id);
         self

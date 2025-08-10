@@ -20,6 +20,7 @@ pub struct RefreshTokenClaims {
     pub token_version: u32,
 }
 
+#[derive(Clone)]
 pub struct JwtService {
     encoding_key: EncodingKey,
     decoding_key: DecodingKey,

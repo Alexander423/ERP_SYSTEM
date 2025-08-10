@@ -8,5 +8,6 @@ pub struct AppState {
     pub config: Config,
     pub db: DatabasePool,
     pub redis: ConnectionManager,
+    #[allow(dead_code)]
     pub auth_service: Arc<AuthService>,
 }

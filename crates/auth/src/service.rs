@@ -6,7 +6,7 @@
 
 use crate::{
     dto::*,
-    models::{Tenant, User, UserWithRoles},
+    models::User,
     repository::AuthRepository,
     workflows::{
         EmailVerificationWorkflow, PasswordResetWorkflow, 
@@ -17,14 +17,14 @@ use crate::{
     email::EmailService,
     tokens::TokenManager,
 };
-use base64;
+use base64::{Engine, prelude::BASE64_STANDARD};
 use chrono::{Duration, Utc};
 use erp_core::{
     config::Config,
     security::{EncryptionService, JwtService, PasswordHasher, TotpService},
     utils::{generate_schema_name, validate_email, validate_password},
-    DatabasePool, Error, Result, TenantContext, TenantId, UserId,
-    audit::{AuditEvent, AuditEventBuilder, AuditLogger, DatabaseAuditRepository, EventSeverity, EventType, EventOutcome},
+    DatabasePool, Error, Result, TenantContext, TenantId,
+    audit::{AuditEventBuilder, AuditLogger, DatabaseAuditRepository, EventSeverity, EventType, EventOutcome},
     error::ErrorMetrics,
     jobs::{JobQueue, RedisJobQueue},
     session::{SessionManager, SessionConfig, SessionData, SessionState},
@@ -32,7 +32,7 @@ use erp_core::{
 use redis::{aio::ConnectionManager, AsyncCommands};
 use serde_json;
 use std::sync::Arc;
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 use uuid::Uuid;
 use validator::Validate;
 
@@ -158,7 +158,7 @@ impl AuthService {
         ));
 
         // Initialize email service based on config
-        let email_service = EmailService::new(config.email.clone())?;
+        let _email_service = EmailService::new(config.email.clone())?;
 
         // Initialize workflows
         let password_reset_config = PasswordResetConfig {
@@ -860,9 +860,9 @@ impl AuthService {
     ) -> Result<()> {
         let key = format!("failed_login:{}:{}", tenant.tenant_id.0, user_id);
         let mut redis = self.redis.clone();
-        let count: i32 = redis.incr(&key, 1).await?;
+        let count: i32 = redis.incr::<_, _, i32>(&key, 1).await?;
         
-        redis.expire(&key, 900).await?;
+        redis.expire::<_, ()>(&key, 900).await?;
 
         if count >= 5 {
             let lock_until = Utc::now() + Duration::minutes(15);
@@ -884,7 +884,7 @@ impl AuthService {
         let key = format!("revoked_token:{}", jti);
         let expiry = self.config.jwt.refresh_token_expiry as u64;
         let mut redis = self.redis.clone();
-        redis.set_ex(&key, "1", expiry).await?;
+        redis.set_ex::<_, _, ()>(&key, "1", expiry).await?;
         Ok(())
     }
 
@@ -1842,7 +1842,7 @@ impl AuthService {
         let encrypted_secret = self.encryption_service.encrypt(secret.as_bytes())?;
         
         // Save encrypted secret (base64 encoded for storage)
-        let encrypted_secret_b64 = base64::encode(&encrypted_secret);
+        let encrypted_secret_b64 = BASE64_STANDARD.encode(&encrypted_secret);
         self.repository
             .save_2fa_secret(tenant_context, user_id, &encrypted_secret_b64)
             .await?;
@@ -1892,7 +1892,7 @@ impl AuthService {
             .ok_or_else(|| Error::new(erp_core::ErrorCode::InvalidInput, "2FA is not enabled for this user"))?;
 
         // Decrypt and verify current TOTP code  
-        let encrypted_bytes = base64::decode(&encrypted_secret)
+        let encrypted_bytes = BASE64_STANDARD.decode(&encrypted_secret)
             .map_err(|e| Error::new(erp_core::ErrorCode::InternalServerError, e.to_string()))?;
         let secret_bytes = self.encryption_service.decrypt(&encrypted_bytes)?;
         let secret_str = String::from_utf8(secret_bytes)
@@ -1954,7 +1954,7 @@ impl AuthService {
 
     // Accessor methods for middleware compatibility
     pub fn jwt_service(&self) -> Arc<JwtService> {
-        Arc::new(JwtService::new(&self.config.jwt).unwrap())
+        Arc::new(self.jwt_service.clone())
     }
 
     pub fn db(&self) -> Arc<DatabasePool> {
@@ -2172,8 +2172,25 @@ impl AuthService {
     pub fn session_manager(&self) -> Arc<SessionManager> {
         self.session_manager.clone()
     }
+
+    /// Get repository for testing purposes
+    pub fn repository(&self) -> &AuthRepository {
+        &self.repository
+    }
+
+    /// Get JWT service for testing purposes (test only)
+    #[cfg(test)]
+    pub fn jwt_service_test(&self) -> &JwtService {
+        &self.jwt_service
+    }
+
+    /// Get TOTP service for testing purposes
+    pub fn totp_service(&self) -> &TotpService {
+        &self.totp_service
+    }
 }
 
+#[derive(Debug)]
 pub enum LoginOrTwoFactorResponse {
     Success(LoginResponse),
     TwoFactorRequired(TwoFactorRequiredResponse),

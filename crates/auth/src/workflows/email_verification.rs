@@ -10,7 +10,7 @@ use erp_core::{
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 /// Configuration for email verification workflow
@@ -471,8 +471,10 @@ mod tests {
         assert!(config.send_welcome_email);
     }
 
+    #[allow(dead_code)]
     struct MockJobQueue;
     impl MockJobQueue {
+        #[allow(dead_code)]
         fn new() -> Self { Self }
     }
     
@@ -499,8 +501,8 @@ mod tests {
             Ok(true)
         }
         
-        async fn get_stats(&self) -> Result<erp_core::jobs::QueueStats> {
-            Ok(erp_core::jobs::QueueStats::default())
+        async fn get_stats(&self) -> Result<erp_core::jobs::traits::QueueStats> {
+            Ok(erp_core::jobs::traits::QueueStats::default())
         }
         
         async fn cleanup_old_jobs(&self, _older_than: chrono::DateTime<chrono::Utc>) -> Result<u64> {

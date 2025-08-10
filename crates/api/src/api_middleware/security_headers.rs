@@ -51,13 +51,11 @@
 //! ```
 
 use axum::{
-    body::Body,
     extract::Request,
     http::{header, HeaderValue, StatusCode},
     middleware::Next,
-    response::{IntoResponse, Response},
+    response::Response,
 };
-use std::time::Duration;
 use tracing::debug;
 
 /// Configuration for HTTP security headers middleware.
@@ -120,6 +118,7 @@ pub struct SecurityHeadersConfig {
     pub permissions_policy: Option<String>,
     
     /// Enable secure cookies in development
+    #[allow(dead_code)]
     pub force_secure_cookies: bool,
 }
 
@@ -161,6 +160,7 @@ impl Default for SecurityHeadersConfig {
 
 impl SecurityHeadersConfig {
     /// Create a development-friendly configuration
+    #[allow(dead_code)]
     pub fn development() -> Self {
         Self {
             enable_hsts: false, // Don't enforce HTTPS in development
@@ -179,6 +179,7 @@ impl SecurityHeadersConfig {
     }
 
     /// Create a production configuration with strict security
+    #[allow(dead_code)]
     pub fn production() -> Self {
         Self {
             enable_hsts: true,
@@ -204,23 +205,28 @@ impl SecurityHeadersConfig {
 
 /// Security headers middleware
 #[derive(Clone)]
+#[allow(dead_code)]
 pub struct SecurityHeadersMiddleware {
     config: SecurityHeadersConfig,
 }
 
 impl SecurityHeadersMiddleware {
+    #[allow(dead_code)]
     pub fn new(config: SecurityHeadersConfig) -> Self {
         Self { config }
     }
 
+    #[allow(dead_code)]
     pub fn with_default_config() -> Self {
         Self::new(SecurityHeadersConfig::default())
     }
 
+    #[allow(dead_code)]
     pub fn for_development() -> Self {
         Self::new(SecurityHeadersConfig::development())
     }
 
+    #[allow(dead_code)]
     pub fn for_production() -> Self {
         Self::new(SecurityHeadersConfig::production())
     }
@@ -314,8 +320,9 @@ pub async fn security_headers_middleware_with_config(
 }
 
 /// Middleware that enforces secure cookie settings
+#[allow(dead_code)]
 pub async fn secure_cookies_middleware(
-    mut request: Request,
+    request: Request,
     next: Next,
 ) -> Result<Response, StatusCode> {
     let response = next.run(request).await;
@@ -329,6 +336,7 @@ pub async fn secure_cookies_middleware(
 }
 
 /// Helper function to create a security event log entry
+#[allow(dead_code)]
 pub fn log_security_event(event: &str, details: Option<&str>) {
     tracing::warn!(
         security_event = event,
@@ -338,17 +346,18 @@ pub fn log_security_event(event: &str, details: Option<&str>) {
 }
 
 
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::{http::StatusCode, routing::get, Router};
+    use axum::{body::Body, http::StatusCode, routing::get, Router};
     use tower::ServiceExt;
 
     #[tokio::test]
     async fn test_security_headers_applied() {
         let app = Router::new()
             .route("/", get(|| async { "Hello, World!" }))
-            .layer(security_headers_layer(SecurityHeadersConfig::default()));
+            .layer(axum::middleware::from_fn(security_headers_middleware));
 
         let response = app
             .oneshot(

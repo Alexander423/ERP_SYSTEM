@@ -1,5 +1,5 @@
 use super::common::{TestContext, init_test_logging};
-use erp_auth::dto::{RegisterRequest, RegistrationResponse};
+use erp_auth::dto::RegisterRequest;
 use validator::Validate;
 
 #[tokio::test]

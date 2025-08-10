@@ -1,6 +1,6 @@
 use crate::{
     dto::*,
-    middleware::{auth_middleware, require_permission, AuthState},
+    middleware::{auth_middleware, AuthState},
     service::{AuthService, LoginOrTwoFactorResponse},
 };
 use axum::{
@@ -10,13 +10,12 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
     Router,
-    routing::{get, post, put, delete},
+    routing::{get, post},
 };
 use axum_extra::extract::cookie::{Cookie, CookieJar, SameSite};
 use erp_core::{Error, RequestContext};
 use serde::Deserialize;
 use std::sync::Arc;
-use std::time::Duration;
 use time;
 use tracing::{error, info};
 use uuid::Uuid;

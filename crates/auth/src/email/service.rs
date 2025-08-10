@@ -351,6 +351,7 @@ impl EmailService {
     }
 
     /// Simulate email sending (placeholder for real SMTP implementation)
+    #[allow(dead_code)]
     async fn simulate_email_send(
         &self,
         to: &str,
@@ -476,8 +477,8 @@ mod tests {
     #[test]
     fn test_email_config_default() {
         let config = EmailConfig::default();
-        assert_eq!(config.smtp_host, "localhost");
-        assert_eq!(config.smtp_port, 587);
+        assert_eq!(config.smtp_host, Some("localhost".to_string()));
+        assert_eq!(config.smtp_port, Some(587));
         assert!(config.use_starttls);
         assert!(!config.use_tls);
     }

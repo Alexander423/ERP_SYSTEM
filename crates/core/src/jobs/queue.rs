@@ -52,12 +52,12 @@ impl RedisJobQueue {
             .map_err(|e| Error::new(ErrorCode::SerializationError, e.to_string()))?;
 
         // Store job data
-        conn.set_ex(&self.job_key(&job.id), job_json, 86400 * 7) // Keep for 7 days
+        conn.set_ex::<_, _, ()>(&self.job_key(&job.id), job_json, 86400 * 7) // Keep for 7 days
             .await?;
 
         // Update statistics
-        conn.hincr(&self.stats_key, "total_jobs", 1).await?;
-        conn.hincr(&self.stats_key, "queued_jobs", 1).await?;
+        conn.hincr::<_, _, _, ()>(&self.stats_key, "total_jobs", 1).await?;
+        conn.hincr::<_, _, _, ()>(&self.stats_key, "queued_jobs", 1).await?;
 
         debug!("Stored job data for {}", job.id);
         Ok(())
@@ -112,7 +112,7 @@ impl RedisJobQueue {
                 
                 // Add to appropriate priority queue
                 let queue_key = self.priority_queue_key(job.priority);
-                conn.lpush(&queue_key, job_id.as_str()).await?;
+                conn.lpush::<_, _, ()>(&queue_key, job_id.as_str()).await?;
                 
                 // Update job data
                 self.store_job_data(&job).await?;
@@ -177,7 +177,7 @@ impl RedisJobQueue {
             // Add to delayed jobs
             let mut conn = self.redis.clone();
             let delayed_timestamp = job.status.scheduled_for.unwrap().timestamp();
-            conn.zadd(
+            conn.zadd::<_, _, _, ()>(
                 &self.delayed_jobs_key(),
                 job.id.as_str(),
                 delayed_timestamp,
@@ -187,8 +187,8 @@ impl RedisJobQueue {
             self.store_job_data(&job).await?;
             
             // Update stats
-            conn.hincr(&self.stats_key, "retrying_jobs", 1).await?;
-            conn.hincr(&self.stats_key, "processing_jobs", -1).await?;
+            conn.hincr::<_, _, _, ()>(&self.stats_key, "retrying_jobs", 1).await?;
+            conn.hincr::<_, _, _, ()>(&self.stats_key, "processing_jobs", -1).await?;
         } else {
             // Mark as failed
             job.status.state = JobState::Failed;
@@ -199,8 +199,8 @@ impl RedisJobQueue {
             
             // Update stats
             let mut conn = self.redis.clone();
-            conn.hincr(&self.stats_key, "failed_jobs", 1).await?;
-            conn.hincr(&self.stats_key, "processing_jobs", -1).await?;
+            conn.hincr::<_, _, _, ()>(&self.stats_key, "failed_jobs", 1).await?;
+            conn.hincr::<_, _, _, ()>(&self.stats_key, "processing_jobs", -1).await?;
         }
         
         Ok(())
@@ -218,13 +218,13 @@ impl JobQueue for RedisJobQueue {
         if let Some(scheduled_for) = job.status.scheduled_for {
             // Add to delayed jobs sorted set
             let timestamp = scheduled_for.timestamp();
-            conn.zadd(&self.delayed_jobs_key(), job.id.as_str(), timestamp)
+            conn.zadd::<_, _, _, ()>(&self.delayed_jobs_key(), job.id.as_str(), timestamp)
                 .await?;
             debug!("Enqueued delayed job {} for {}", job.id, scheduled_for);
         } else {
             // Add to appropriate priority queue
             let queue_key = self.priority_queue_key(job.priority);
-            conn.lpush(&queue_key, job.id.as_str()).await?;
+            conn.lpush::<_, _, ()>(&queue_key, job.id.as_str()).await?;
             debug!("Enqueued immediate job {} with priority {:?}", job.id, job.priority);
         }
         
@@ -262,7 +262,7 @@ impl JobQueue for RedisJobQueue {
                     }
                     
                     // Add to processing set with timestamp
-                    conn.sadd(&self.processing_set, job_id.as_str()).await?;
+                    conn.sadd::<_, _, ()>(&self.processing_set, job_id.as_str()).await?;
                     
                     // Update job status
                     job.mark_processing();
@@ -271,8 +271,8 @@ impl JobQueue for RedisJobQueue {
                     self.store_job_data(&job).await?;
                     
                     // Update statistics
-                    conn.hincr(&self.stats_key, "queued_jobs", -1).await?;
-                    conn.hincr(&self.stats_key, "processing_jobs", 1).await?;
+                    conn.hincr::<_, _, _, ()>(&self.stats_key, "queued_jobs", -1).await?;
+                    conn.hincr::<_, _, _, ()>(&self.stats_key, "processing_jobs", 1).await?;
                     
                     debug!("Dequeued job {} for worker {}", job.id, worker_id);
                     return Ok(Some(job));
@@ -302,19 +302,19 @@ impl JobQueue for RedisJobQueue {
                 
                 match (old_state, job.status.state) {
                     (JobState::Processing, JobState::Completed) => {
-                        conn.srem(&self.processing_set, job_id.as_str()).await?;
-                        conn.hincr(&self.stats_key, "processing_jobs", -1).await?;
-                        conn.hincr(&self.stats_key, "completed_jobs", 1).await?;
+                        conn.srem::<_, _, ()>(&self.processing_set, job_id.as_str()).await?;
+                        conn.hincr::<_, _, _, ()>(&self.stats_key, "processing_jobs", -1).await?;
+                        conn.hincr::<_, _, _, ()>(&self.stats_key, "completed_jobs", 1).await?;
                     }
                     (JobState::Processing, JobState::Failed) => {
-                        conn.srem(&self.processing_set, job_id.as_str()).await?;
-                        conn.hincr(&self.stats_key, "processing_jobs", -1).await?;
-                        conn.hincr(&self.stats_key, "failed_jobs", 1).await?;
+                        conn.srem::<_, _, ()>(&self.processing_set, job_id.as_str()).await?;
+                        conn.hincr::<_, _, _, ()>(&self.stats_key, "processing_jobs", -1).await?;
+                        conn.hincr::<_, _, _, ()>(&self.stats_key, "failed_jobs", 1).await?;
                     }
                     (JobState::Processing, JobState::Retrying) => {
-                        conn.srem(&self.processing_set, job_id.as_str()).await?;
-                        conn.hincr(&self.stats_key, "processing_jobs", -1).await?;
-                        conn.hincr(&self.stats_key, "retrying_jobs", 1).await?;
+                        conn.srem::<_, _, ()>(&self.processing_set, job_id.as_str()).await?;
+                        conn.hincr::<_, _, _, ()>(&self.stats_key, "processing_jobs", -1).await?;
+                        conn.hincr::<_, _, _, ()>(&self.stats_key, "retrying_jobs", 1).await?;
                     }
                     _ => {}
                 }
@@ -355,7 +355,7 @@ impl JobQueue for RedisJobQueue {
             self.store_job_data(&job).await?;
             
             // Update statistics
-            conn.hincr(&self.stats_key, "cancelled_jobs", 1).await?;
+            conn.hincr::<_, _, _, ()>(&self.stats_key, "cancelled_jobs", 1).await?;
             
             info!("Cancelled job {}", job_id);
             Ok(true)
@@ -402,7 +402,7 @@ impl JobQueue for RedisJobQueue {
     async fn cleanup_old_jobs(&self, older_than: DateTime<Utc>) -> Result<u64> {
         // This is a simplified implementation
         // In a real system, you'd scan through completed/failed jobs and remove old ones
-        let cutoff_timestamp = older_than.timestamp();
+        let _cutoff_timestamp = older_than.timestamp();
         let mut conn = self.redis.clone();
         
         // Clean up old delayed jobs that are way past their execution time
@@ -414,7 +414,7 @@ impl JobQueue for RedisJobQueue {
         Ok(cleaned as u64)
     }
 
-    async fn get_jobs_by_status(&self, status: JobState, limit: Option<u32>) -> Result<Vec<QueuedJob>> {
+    async fn get_jobs_by_status(&self, status: JobState, _limit: Option<u32>) -> Result<Vec<QueuedJob>> {
         // This would require scanning through stored job data
         // For now, return empty vec - in a real implementation you'd use a secondary index
         debug!("get_jobs_by_status called for {:?} (not implemented)", status);

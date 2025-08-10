@@ -341,7 +341,7 @@ mod tests {
         };
 
         let serialized = <EmailJobData as erp_core::SerializableJob>::serialize(&job_data).unwrap();
-        let deserialized = <EmailJobData as erp_core::SerializableJob>::deserialize(&serialized).unwrap();
+        let _deserialized = <EmailJobData as erp_core::SerializableJob>::deserialize(&serialized).unwrap();
         
         // The deserialized result is a Box<dyn SerializableJob>, 
         // so we can't directly compare, but we can test the serialization worked

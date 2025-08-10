@@ -261,6 +261,7 @@ mod base64_url {
         URL_SAFE_NO_PAD.encode(data)
     }
     
+    #[allow(dead_code)]
     pub fn decode(data: &str) -> Result<Vec<u8>, base64::DecodeError> {
         URL_SAFE_NO_PAD.decode(data)
     }

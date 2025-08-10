@@ -388,7 +388,7 @@ impl SessionManager {
         // Calculate TTL based on absolute timeout
         let ttl = session.expires_at.signed_duration_since(Utc::now()).num_seconds().max(1) as u64;
 
-        conn.set_ex(&session_key, serialized, ttl).await?;
+        conn.set_ex::<_, _, ()>(&session_key, serialized, ttl).await?;
         
         debug!("Stored session: {} with TTL: {}s", session.session_id, ttl);
         Ok(())

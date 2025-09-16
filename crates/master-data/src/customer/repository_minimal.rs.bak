@@ -1,0 +1,170 @@
+// Minimal Customer Repository Implementation
+// This is a simplified version to achieve compilation while database schema is being fixed
+
+use async_trait::async_trait;
+use chrono::{DateTime, Utc};
+use sqlx::{PgPool, Postgres, Pool};
+use std::collections::HashMap;
+use uuid::Uuid;
+
+use crate::customer::*;
+use erp_core::TenantContext;
+use crate::types::*;
+use crate::error::{MasterDataError, Result};
+
+/// Customer repository trait defining data access operations
+#[async_trait]
+pub trait CustomerRepository: Send + Sync {
+    async fn create_customer(&self, request: &CreateCustomerRequest, created_by: Uuid) -> Result<Customer>;
+    async fn get_customer_by_id(&self, id: Uuid) -> Result<Option<Customer>>;
+    async fn get_customer_by_number(&self, customer_number: &str) -> Result<Option<Customer>>;
+    async fn update_customer(&self, id: Uuid, update: &UpdateCustomerRequest, modified_by: Uuid) -> Result<Customer>;
+    async fn delete_customer(&self, id: Uuid, deleted_by: Uuid) -> Result<()>;
+    async fn list_customers(&self, criteria: &CustomerSearchCriteria, page: u32, page_size: u32) -> Result<CustomerSearchResponse>;
+    async fn get_customer_hierarchy(&self, customer_id: Uuid) -> Result<Vec<Customer>>;
+    async fn get_customers_by_corporate_group(&self, group_id: Uuid) -> Result<Vec<Customer>>;
+    async fn get_customer_addresses(&self, customer_id: Uuid) -> Result<Vec<Address>>;
+    async fn get_customer_contacts(&self, customer_id: Uuid) -> Result<Vec<ContactInfo>>;
+    async fn search_customers(&self, criteria: &CustomerSearchCriteria) -> Result<Vec<Customer>>;
+}
+
+// CustomerNumberGenerator trait should be defined elsewhere or imported
+
+/// PostgreSQL implementation of customer repository
+pub struct PostgresCustomerRepository {
+    pool: PgPool,
+    tenant_context: TenantContext,
+}
+
+impl PostgresCustomerRepository {
+    pub fn new(pool: PgPool, tenant_context: TenantContext) -> Self {
+        Self { pool, tenant_context }
+    }
+
+    /// Create a minimal customer for testing purposes
+    fn create_minimal_customer(&self, id: Uuid, customer_number: String, legal_name: String) -> Customer {
+        Customer {
+            id,
+            customer_number,
+            external_ids: HashMap::new(),
+            legal_name,
+            trade_names: vec![],
+            customer_type: CustomerType::B2b,
+            industry_classification: IndustryClassification::Other,
+            business_size: BusinessSize::Medium,
+            parent_customer_id: None,
+            corporate_group_id: None,
+            customer_hierarchy_level: 0,
+            consolidation_group: None,
+            lifecycle_stage: CustomerLifecycleStage::Prospect,
+            status: EntityStatus::Active,
+            credit_status: CreditStatus::Good,
+            primary_address_id: None,
+            billing_address_id: None,
+            shipping_address_ids: vec![],
+            addresses: vec![],
+            primary_contact_id: None,
+            contacts: vec![],
+            tax_jurisdictions: vec![],
+            tax_numbers: HashMap::new(),
+            regulatory_classifications: vec![],
+            compliance_status: ComplianceStatus::Compliant,
+            kyc_status: KycStatus::Completed,
+            aml_risk_rating: RiskRating::Low,
+            financial_info: FinancialInfo::default(),
+            price_group_id: None,
+            discount_group_id: None,
+            sales_representative_id: None,
+            account_manager_id: None,
+            customer_segments: vec![],
+            acquisition_channel: None,
+            customer_lifetime_value: None,
+            churn_probability: None,
+            performance_metrics: CustomerPerformanceMetrics::default(),
+            behavioral_data: CustomerBehavioralData::default(),
+            sync_info: SyncInfo::default(),
+            custom_fields: HashMap::new(),
+            contract_ids: vec![],
+            audit: AuditFields {
+                created_by: Uuid::new_v4(),
+                created_at: Utc::now(),
+                modified_by: Uuid::new_v4(),
+                modified_at: Utc::now(),
+                version: 1,
+                is_deleted: false,
+                deleted_at: None,
+                deleted_by: None,
+            },
+        }
+    }
+}
+
+#[async_trait]
+impl CustomerRepository for PostgresCustomerRepository {
+    async fn create_customer(&self, request: &CreateCustomerRequest, created_by: Uuid) -> Result<Customer> {
+        // TODO: Implement proper database insertion
+        // For now, return a minimal customer to fix compilation
+        let customer_id = Uuid::new_v4();
+        let customer_number = format!("TEMP-{}", &customer_id.to_string()[..8].to_uppercase());
+
+        Ok(self.create_minimal_customer(customer_id, customer_number, request.legal_name.clone()))
+    }
+
+    async fn get_customer_by_id(&self, id: Uuid) -> Result<Option<Customer>> {
+        // TODO: Implement proper database query
+        Ok(None)
+    }
+
+    async fn get_customer_by_number(&self, customer_number: &str) -> Result<Option<Customer>> {
+        // TODO: Implement proper database query
+        Ok(None)
+    }
+
+    async fn update_customer(&self, id: Uuid, update: &UpdateCustomerRequest, modified_by: Uuid) -> Result<Customer> {
+        // TODO: Implement proper database update
+        let customer_number = format!("UPD-{}", &id.to_string()[..8].to_uppercase());
+        Ok(self.create_minimal_customer(id, customer_number, update.legal_name.clone().unwrap_or("Updated Customer".to_string())))
+    }
+
+    async fn delete_customer(&self, id: Uuid, deleted_by: Uuid) -> Result<()> {
+        // TODO: Implement proper soft delete
+        Ok(())
+    }
+
+    async fn list_customers(&self, criteria: &CustomerSearchCriteria, page: u32, page_size: u32) -> Result<CustomerSearchResponse> {
+        // TODO: Implement proper database query with pagination
+        Ok(CustomerSearchResponse {
+            customers: vec![],
+            total_count: 0,
+        })
+    }
+
+    async fn get_customer_hierarchy(&self, customer_id: Uuid) -> Result<Vec<Customer>> {
+        // TODO: Implement proper hierarchy query
+        Ok(vec![])
+    }
+
+    async fn get_customers_by_corporate_group(&self, group_id: Uuid) -> Result<Vec<Customer>> {
+        // TODO: Implement proper group query
+        Ok(vec![])
+    }
+
+    async fn get_customer_addresses(&self, customer_id: Uuid) -> Result<Vec<Address>> {
+        // TODO: Implement proper address loading
+        Ok(vec![])
+    }
+
+    async fn get_customer_contacts(&self, customer_id: Uuid) -> Result<Vec<ContactInfo>> {
+        // TODO: Implement proper contact loading
+        Ok(vec![])
+    }
+
+    // TODO: Add address and contact management functions when types are available
+
+    async fn search_customers(&self, criteria: &CustomerSearchCriteria) -> Result<Vec<Customer>> {
+        // TODO: Implement proper search
+        Ok(vec![])
+    }
+}
+
+// TODO: Implement CustomerNumberGenerator when trait is defined

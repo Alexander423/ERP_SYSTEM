@@ -24,6 +24,8 @@ pub struct RefreshTokenClaims {
 pub struct SessionTokenClaims {
     pub sub: String, // user_id
     pub tenant_id: String,
+    pub aud: String, // audience
+    pub iss: String, // issuer
     pub exp: i64,
     pub iat: i64,
     pub jti: String,
@@ -124,6 +126,8 @@ impl JwtService {
         let claims = SessionTokenClaims {
             sub: user_id.to_string(),
             tenant_id: tenant_id.to_string(),
+            aud: "api".to_string(),
+            iss: "auth-service".to_string(),
             exp: exp.timestamp(),
             iat: now.timestamp(),
             jti: Uuid::new_v4().to_string(),

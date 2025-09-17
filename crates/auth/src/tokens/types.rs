@@ -155,12 +155,14 @@ impl TokenData {
 
     /// Generate a cryptographically secure token
     fn generate_secure_token() -> String {
-        use rand::Rng;
-        
-        // Generate 32 random bytes and encode as URL-safe base64
-        let mut rng = rand::thread_rng();
-        let bytes: [u8; 32] = rng.gen();
-        
+        use rand::rngs::OsRng;
+        use rand::RngCore;
+
+        // Generate 32 random bytes using cryptographically secure OS RNG
+        let mut rng = OsRng;
+        let mut bytes = [0u8; 32];
+        rng.fill_bytes(&mut bytes);
+
         // Use URL-safe base64 without padding
         base64_url::encode(&bytes)
     }

@@ -213,7 +213,7 @@ impl DatabasePool {
     async fn create_tenant_pool(&self, schema_name: &str) -> Result<PgPool> {
         let schema = schema_name.to_string();
         let pool = PgPoolOptions::new()
-            .max_connections(self.config.max_connections / 4)
+            .max_connections(std::cmp::max(1, self.config.max_connections / 4))
             .min_connections(1)
             .after_connect(move |conn, _meta| {
                 let schema = schema.clone();

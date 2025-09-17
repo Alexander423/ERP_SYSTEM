@@ -69,11 +69,13 @@ use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
 mod error;
+mod handlers;
 mod health;
 mod api_middleware;
 mod state;
 
 use crate::{
+    handlers::{auth, users, roles},
     state::AppState
 };
 
@@ -240,8 +242,8 @@ fn create_app(state: AppState, _auth_service: Arc<AuthService>) -> Result<Router
 
     // Build the router
     let router = Router::new()
-        // API routes - placeholder for now
-        .nest("/api/v1", Router::new())
+        // API routes
+        .nest("/api/v1", create_api_routes())
         // Swagger UI
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
         // Health checks
@@ -271,6 +273,14 @@ fn create_app(state: AppState, _auth_service: Arc<AuthService>) -> Result<Router
         .fallback(handler_404);
     
     Ok(router)
+}
+
+/// Create the API routes
+fn create_api_routes() -> Router<AppState> {
+    Router::new()
+        .nest("/auth", auth::auth_routes())
+        .nest("/users", users::user_routes())
+        .nest("/roles", roles::role_routes())
 }
 
 async fn handler_404() -> impl IntoResponse {

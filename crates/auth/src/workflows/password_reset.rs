@@ -6,10 +6,9 @@ use erp_core::{
     audit::{AuditEvent, AuditLogger, event::EventOutcome, EventSeverity, EventType},
     error::{Error, ErrorCode, Result},
     jobs::JobQueue,
+    security::PasswordHasher,
     DatabasePool, TenantContext,
 };
-use argon2::{password_hash::SaltString, Argon2, PasswordHasher};
-use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
@@ -68,6 +67,7 @@ pub struct PasswordResetWorkflow {
     user_repository: Arc<UserRepository>,
     job_queue: Arc<dyn JobQueue>,
     audit_logger: Option<AuditLogger>,
+    password_hasher: Arc<PasswordHasher>,
     db: DatabasePool,
 }
 
@@ -78,6 +78,7 @@ impl PasswordResetWorkflow {
         user_repository: Arc<UserRepository>,
         job_queue: Arc<dyn JobQueue>,
         audit_logger: Option<AuditLogger>,
+        password_hasher: Arc<PasswordHasher>,
         db: DatabasePool,
     ) -> Self {
         Self {
@@ -86,6 +87,7 @@ impl PasswordResetWorkflow {
             user_repository,
             job_queue,
             audit_logger,
+            password_hasher,
             db,
         }
     }
@@ -408,13 +410,7 @@ impl PasswordResetWorkflow {
     }
 
     fn hash_password(&self, password: &str) -> Result<String> {
-        let salt = SaltString::generate(&mut OsRng);
-        let argon2 = Argon2::default();
-        
-        argon2.hash_password(password.as_bytes(), &salt)
-            .map_err(|e| Error::new(ErrorCode::InternalServerError, e.to_string()))?
-            .to_string()
-            .pipe(Ok)
+        self.password_hasher.hash_password(password)
     }
 
     fn is_valid_email(&self, email: &str) -> bool {

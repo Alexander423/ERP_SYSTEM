@@ -179,6 +179,7 @@ impl AuthService {
             Arc::new(repository.clone()),
             job_queue.clone(),
             audit_logger.clone(),
+            Arc::new(password_hasher.clone()),
             db.clone(),
         ));
 
@@ -717,10 +718,11 @@ impl AuthService {
     /// use erp_auth::AuthService;
     /// 
     /// let refresh_token = "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9...";
-    /// let new_access_token = auth_service.refresh_token(refresh_token).await?;
-    /// println!("New access token: {}", new_access_token);
+    /// let token_pair = auth_service.refresh_token(refresh_token).await?;
+    /// println!("New access token: {}", token_pair.access_token);
+    /// println!("New refresh token: {}", token_pair.refresh_token);
     /// ```
-    pub async fn refresh_token(&self, refresh_token: &str) -> Result<String> {
+    pub async fn refresh_token(&self, refresh_token: &str) -> Result<erp_core::security::jwt::TokenPair> {
         let claims = self.jwt_service.verify_refresh_token(refresh_token)?;
         
         let is_revoked = self.is_token_revoked(&claims.jti).await?;
@@ -756,8 +758,8 @@ impl AuthService {
         self.revoke_token(&claims.jti).await?;
 
         let token_pair = self.generate_tokens_for_user(&tenant_context, &user).await?;
-        
-        Ok(token_pair.access_token)
+
+        Ok(token_pair)
     }
 
     /// Logs out a user by revoking their authentication tokens.

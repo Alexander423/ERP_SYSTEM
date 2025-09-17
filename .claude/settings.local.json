@@ -162,7 +162,8 @@
       "Bash(timeout 10 cargo run --bin apply-schema)",
       "Bash(timeout 5 cargo run --bin erp-server -- --help)",
       "Bash(timeout 5 cargo run -p erp-api --bin erp-server -- --help)",
-      "Bash(awk:*)"
+      "Bash(awk:*)",
+      "Bash(SQLX_OFFLINE=true timeout 30s cargo check --message-format=short --package erp-core --package erp-auth)"
     ],
     "deny": []
   }

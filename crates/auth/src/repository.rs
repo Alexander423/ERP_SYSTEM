@@ -19,17 +19,37 @@ impl AuthRepository {
     }
 
     pub async fn create_tenant(&self, name: &str, schema_name: &str) -> Result<Tenant> {
+        // Start transaction to ensure atomicity
+        let mut tx = self.db.main_pool.begin().await?;
+
+        // Insert tenant record
         let tenant = sqlx::query_as::<_, Tenant>(
             "INSERT INTO public.tenants (name, schema_name) VALUES ($1, $2) RETURNING *"
         )
         .bind(name)
         .bind(schema_name)
-        .fetch_one(&self.db.main_pool)
+        .fetch_one(&mut *tx)
         .await?;
 
-        self.db.create_tenant_schema(schema_name).await?;
-
-        Ok(tenant)
+        // Create tenant schema - if this fails, transaction will rollback
+        match self.db.create_tenant_schema(schema_name).await {
+            Ok(_) => {
+                // Both operations succeeded, commit transaction
+                tx.commit().await?;
+                Ok(tenant)
+            }
+            Err(e) => {
+                // Schema creation failed, rollback transaction
+                // This will remove the tenant record from database
+                tx.rollback().await.map_err(|rollback_err| {
+                    Error::internal(format!(
+                        "Schema creation failed: {}, and rollback failed: {}",
+                        e, rollback_err
+                    ))
+                })?;
+                Err(e)
+            }
+        }
     }
 
     pub async fn get_tenant_by_id(&self, id: Uuid) -> Result<Option<Tenant>> {

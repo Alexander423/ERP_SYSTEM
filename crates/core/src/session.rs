@@ -357,14 +357,15 @@ impl SessionManager {
         let pattern = format!("session:{}:*", tenant.tenant_id.0);
         let mut conn = self.redis.clone();
 
-        let session_keys: Vec<String> = conn.keys(&pattern).await?;
+        // Use SCAN instead of KEYS to avoid blocking Redis
+        let session_keys = self.scan_keys(&mut conn, &pattern).await?;
         let mut stats = SessionStats::default();
 
         for session_key in session_keys {
             if let Ok(Some(data)) = conn.get::<&str, Option<String>>(&session_key).await {
                 if let Ok(session) = serde_json::from_str::<SessionData>(&data) {
                     stats.total_sessions += 1;
-                    
+
                     match session.state {
                         SessionState::Active => {
                             if self.is_session_valid(&session) {
@@ -386,6 +387,39 @@ impl SessionManager {
     }
 
     // Private helper methods
+
+    /// Non-blocking scan for Redis keys matching a pattern
+    async fn scan_keys(&self, conn: &mut redis::aio::ConnectionManager, pattern: &str) -> Result<Vec<String>> {
+        use redis::{AsyncCommands, Cmd};
+
+        let mut cursor: u64 = 0;
+        let mut keys = Vec::new();
+
+        loop {
+            let mut cmd = Cmd::new();
+            cmd.arg("SCAN").arg(cursor).arg("MATCH").arg(pattern).arg("COUNT").arg(100);
+
+            let result: Vec<redis::Value> = cmd.query_async(conn).await
+                .map_err(|e| Error::internal(format!("Redis SCAN failed: {}", e)))?;
+
+            if let [redis::Value::BulkString(cursor_bytes), redis::Value::Array(key_values)] = &result[..] {
+                cursor = String::from_utf8_lossy(cursor_bytes).parse().unwrap_or(0);
+
+                for key_value in key_values {
+                    if let redis::Value::BulkString(key_bytes) = key_value {
+                        keys.push(String::from_utf8_lossy(key_bytes).to_string());
+                    }
+                }
+            }
+
+            // If cursor is 0, we've completed the scan
+            if cursor == 0 {
+                break;
+            }
+        }
+
+        Ok(keys)
+    }
 
     fn session_key(&self, tenant: &TenantContext, session_id: &str) -> String {
         format!("session:{}:{}", tenant.tenant_id.0, session_id)

@@ -493,16 +493,49 @@ impl TokenManager {
     ) -> Result<()> {
         let mut conn = self.redis.clone();
         let pattern = format!("token:{}:{}:*", purpose.cache_prefix(), tenant.tenant_id.0);
-        
-        // In a production system, you'd use SCAN instead of KEYS for better performance
-        let keys: Vec<String> = conn.keys(&pattern).await?;
-        
+
+        // Use SCAN instead of KEYS for better performance in production
+        let keys = self.scan_keys(&mut conn, &pattern).await?;
+
         if !keys.is_empty() {
             let _: u32 = conn.del(&keys).await?;
             debug!("Cleared {} cached tokens for user: {}", keys.len(), user_id);
         }
-        
+
         Ok(())
+    }
+
+    /// Non-blocking scan for Redis keys matching a pattern
+    async fn scan_keys(&self, conn: &mut redis::aio::ConnectionManager, pattern: &str) -> Result<Vec<String>> {
+        use redis::{AsyncCommands, Cmd};
+
+        let mut cursor: u64 = 0;
+        let mut keys = Vec::new();
+
+        loop {
+            let mut cmd = Cmd::new();
+            cmd.arg("SCAN").arg(cursor).arg("MATCH").arg(pattern).arg("COUNT").arg(100);
+
+            let result: Vec<redis::Value> = cmd.query_async(conn).await
+                .map_err(|e| Error::new(ErrorCode::InternalServerError, format!("Redis SCAN failed: {}", e)))?;
+
+            if let [redis::Value::BulkString(cursor_bytes), redis::Value::Array(key_values)] = &result[..] {
+                cursor = String::from_utf8_lossy(cursor_bytes).parse().unwrap_or(0);
+
+                for key_value in key_values {
+                    if let redis::Value::BulkString(key_bytes) = key_value {
+                        keys.push(String::from_utf8_lossy(key_bytes).to_string());
+                    }
+                }
+            }
+
+            // If cursor is 0, we've completed the scan
+            if cursor == 0 {
+                break;
+            }
+        }
+
+        Ok(keys)
     }
 }
 

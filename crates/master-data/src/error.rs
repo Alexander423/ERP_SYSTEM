@@ -18,6 +18,9 @@ pub enum MasterDataError {
     #[error("Organization unit not found: {id}")]
     OrganizationUnitNotFound { id: String },
 
+    #[error("Entity not found")]
+    NotFound,
+
     #[error("Invalid customer number format: {number}")]
     InvalidCustomerNumber { number: String },
 
@@ -97,7 +100,8 @@ impl axum::response::IntoResponse for MasterDataError {
             | MasterDataError::SupplierNotFound { .. }
             | MasterDataError::ProductNotFound { .. }
             | MasterDataError::LocationNotFound { .. }
-            | MasterDataError::OrganizationUnitNotFound { .. } => {
+            | MasterDataError::OrganizationUnitNotFound { .. }
+            | MasterDataError::NotFound => {
                 (StatusCode::NOT_FOUND, self.to_string())
             }
 

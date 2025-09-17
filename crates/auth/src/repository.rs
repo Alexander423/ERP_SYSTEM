@@ -1,6 +1,7 @@
 use crate::models::{Permission, Role, Tenant, User};
 use chrono::{DateTime, Utc};
 use erp_core::{DatabasePool, Error, Result, TenantContext};
+use sqlx::Row;
 use uuid::Uuid;
 
 #[derive(Clone)]
@@ -682,16 +683,19 @@ impl AuthRepository {
     ) -> Result<Option<(String, chrono::DateTime<chrono::Utc>)>> {
         let pool = self.db.get_tenant_pool(tenant).await?;
         
-        let result = sqlx::query!(
-            "SELECT two_factor_secret_encrypted, two_factor_enabled_at 
-             FROM users WHERE id = $1",
-            user_id
+        let result = sqlx::query(
+            "SELECT two_factor_secret_encrypted, two_factor_enabled_at
+             FROM users WHERE id = $1"
         )
+        .bind(user_id)
         .fetch_optional(pool.get())
         .await?;
 
         if let Some(row) = result {
-            if let (Some(secret), Some(enabled_at)) = (row.two_factor_secret_encrypted, row.two_factor_enabled_at) {
+            if let (Some(secret), Some(enabled_at)) = (
+                row.try_get::<Option<String>, _>("two_factor_secret_encrypted")?,
+                row.try_get::<Option<chrono::DateTime<chrono::Utc>>, _>("two_factor_enabled_at")?
+            ) {
                 return Ok(Some((secret, enabled_at)));
             }
         }
@@ -707,10 +711,10 @@ impl AuthRepository {
     ) -> Result<bool> {
         let pool = self.db.get_tenant_pool(tenant).await?;
         
-        let result = sqlx::query_scalar!(
-            "SELECT two_factor_enabled_at IS NOT NULL FROM users WHERE id = $1",
-            user_id
+        let result: Option<bool> = sqlx::query_scalar(
+            "SELECT two_factor_enabled_at IS NOT NULL FROM users WHERE id = $1"
         )
+        .bind(user_id)
         .fetch_one(pool.get())
         .await?;
 

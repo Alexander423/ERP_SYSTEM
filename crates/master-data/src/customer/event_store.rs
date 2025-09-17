@@ -6,7 +6,7 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde_json;
-use sqlx::PgPool;
+use sqlx::{PgPool, Row};
 use std::collections::HashMap;
 use uuid::Uuid;
 
@@ -110,23 +110,22 @@ impl CustomerEventStore for PostgresCustomerEventStore {
         let mut tx = self.pool.begin().await?;
 
         // Get current version with row lock (first lock existing records, then get max)
-        sqlx::query!(
+        sqlx::query(
             "SELECT event_id FROM customer_events WHERE aggregate_id = $1 AND tenant_id = $2 FOR UPDATE",
-            aggregate_id,
-            self.tenant_context.tenant_id.0
         )
+        .bind(aggregate_id)
+        .bind(self.tenant_context.tenant_id.0)
         .fetch_all(&mut *tx)
         .await?;
 
-        let current_version = sqlx::query_scalar!(
+        let current_version: i64 = sqlx::query_scalar::<_, i64>(
             "SELECT COALESCE(MAX(sequence_number), 0) FROM customer_events
              WHERE aggregate_id = $1 AND tenant_id = $2",
-            aggregate_id,
-            self.tenant_context.tenant_id.0
         )
+        .bind(aggregate_id)
+        .bind(self.tenant_context.tenant_id.0)
         .fetch_one(&mut *tx)
-        .await?
-        .unwrap_or(0);
+        .await?;
 
         // Check optimistic concurrency control
         if let Some(expected) = expected_version {
@@ -184,24 +183,24 @@ impl CustomerEventStore for PostgresCustomerEventStore {
             uid,
         ) in event_records
         {
-            sqlx::query!(
+            sqlx::query(
                 r#"
                 INSERT INTO customer_events
                 (event_id, aggregate_id, tenant_id, sequence_number, event_type,
                  event_data, metadata, occurred_at, recorded_at, user_id)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
                 "#,
-                event_id,
-                agg_id,
-                tenant_id,
-                seq_num,
-                event_type,
-                event_data,
-                metadata,
-                occurred_at,
-                recorded_at,
-                uid
             )
+            .bind(event_id)
+            .bind(agg_id)
+            .bind(tenant_id)
+            .bind(seq_num)
+            .bind(event_type)
+            .bind(event_data)
+            .bind(metadata)
+            .bind(occurred_at)
+            .bind(recorded_at)
+            .bind(uid)
             .execute(&mut *tx)
             .await?;
         }
@@ -212,7 +211,7 @@ impl CustomerEventStore for PostgresCustomerEventStore {
     }
 
     async fn load_events(&self, aggregate_id: Uuid) -> Result<Vec<CustomerEventWithMetadata>> {
-        let records = sqlx::query!(
+        let records = sqlx::query(
             r#"
             SELECT event_id, aggregate_id, tenant_id, sequence_number, event_type,
                    event_data, metadata, occurred_at, recorded_at, user_id
@@ -220,16 +219,16 @@ impl CustomerEventStore for PostgresCustomerEventStore {
             WHERE aggregate_id = $1 AND tenant_id = $2
             ORDER BY sequence_number ASC
             "#,
-            aggregate_id,
-            self.tenant_context.tenant_id.0
         )
+        .bind(aggregate_id)
+        .bind(self.tenant_context.tenant_id.0)
         .fetch_all(&self.pool)
         .await?;
 
         let mut events = Vec::new();
         for record in records {
-            let event: CustomerEvent = serde_json::from_value(record.event_data)?;
-            let metadata: EventMetadata = serde_json::from_value(record.metadata)?;
+            let event: CustomerEvent = serde_json::from_value(record.try_get("event_data")?)?;
+            let metadata: EventMetadata = serde_json::from_value(record.try_get("metadata")?)?;
 
             events.push(CustomerEventWithMetadata { metadata, event });
         }
@@ -242,7 +241,7 @@ impl CustomerEventStore for PostgresCustomerEventStore {
         aggregate_id: Uuid,
         from_version: i64,
     ) -> Result<Vec<CustomerEventWithMetadata>> {
-        let records = sqlx::query!(
+        let records = sqlx::query(
             r#"
             SELECT event_id, aggregate_id, tenant_id, sequence_number, event_type,
                    event_data, metadata, occurred_at, recorded_at, user_id
@@ -250,17 +249,17 @@ impl CustomerEventStore for PostgresCustomerEventStore {
             WHERE aggregate_id = $1 AND tenant_id = $2 AND sequence_number > $3
             ORDER BY sequence_number ASC
             "#,
-            aggregate_id,
-            self.tenant_context.tenant_id.0,
-            from_version
         )
+        .bind(aggregate_id)
+        .bind(self.tenant_context.tenant_id.0)
+        .bind(from_version)
         .fetch_all(&self.pool)
         .await?;
 
         let mut events = Vec::new();
         for record in records {
-            let event: CustomerEvent = serde_json::from_value(record.event_data)?;
-            let metadata: EventMetadata = serde_json::from_value(record.metadata)?;
+            let event: CustomerEvent = serde_json::from_value(record.try_get("event_data")?)?;
+            let metadata: EventMetadata = serde_json::from_value(record.try_get("metadata")?)?;
 
             events.push(CustomerEventWithMetadata { metadata, event });
         }
@@ -344,7 +343,7 @@ impl CustomerEventStore for PostgresCustomerEventStore {
             return Ok(HashMap::new());
         }
 
-        let records = sqlx::query!(
+        let records = sqlx::query(
             r#"
             SELECT event_id, aggregate_id, tenant_id, sequence_number, event_type,
                    event_data, metadata, occurred_at, recorded_at, user_id
@@ -352,22 +351,22 @@ impl CustomerEventStore for PostgresCustomerEventStore {
             WHERE aggregate_id = ANY($1) AND tenant_id = $2
             ORDER BY aggregate_id, sequence_number ASC
             "#,
-            &customer_ids,
-            self.tenant_context.tenant_id.0
         )
+        .bind(&customer_ids)
+        .bind(self.tenant_context.tenant_id.0)
         .fetch_all(&self.pool)
         .await?;
 
         let mut result: HashMap<Uuid, Vec<CustomerEventWithMetadata>> = HashMap::new();
 
         for record in records {
-            let event: CustomerEvent = serde_json::from_value(record.event_data)?;
-            let metadata: EventMetadata = serde_json::from_value(record.metadata)?;
+            let event: CustomerEvent = serde_json::from_value(record.try_get("event_data")?)?;
+            let metadata: EventMetadata = serde_json::from_value(record.try_get("metadata")?)?;
 
             let event_with_metadata = CustomerEventWithMetadata { metadata, event };
 
             result
-                .entry(record.aggregate_id)
+                .entry(record.try_get("aggregate_id")?)
                 .or_insert_with(Vec::new)
                 .push(event_with_metadata);
         }
@@ -376,11 +375,11 @@ impl CustomerEventStore for PostgresCustomerEventStore {
     }
 
     async fn get_current_version(&self, aggregate_id: Uuid) -> Result<Option<i64>> {
-        let version = sqlx::query_scalar!(
+        let version = sqlx::query_scalar::<_, Option<i64>>(
             "SELECT MAX(sequence_number) FROM customer_events WHERE aggregate_id = $1 AND tenant_id = $2",
-            aggregate_id,
-            self.tenant_context.tenant_id.0
         )
+        .bind(aggregate_id)
+        .bind(self.tenant_context.tenant_id.0)
         .fetch_one(&self.pool)
         .await?;
 
@@ -393,7 +392,7 @@ impl CustomerEventStore for PostgresCustomerEventStore {
         version: i64,
         snapshot_data: serde_json::Value,
     ) -> Result<()> {
-        sqlx::query!(
+        sqlx::query(
             r#"
             INSERT INTO customer_snapshots
             (aggregate_id, tenant_id, version, snapshot_data, created_at)
@@ -404,11 +403,11 @@ impl CustomerEventStore for PostgresCustomerEventStore {
                 snapshot_data = EXCLUDED.snapshot_data,
                 created_at = EXCLUDED.created_at
             "#,
-            aggregate_id,
-            self.tenant_context.tenant_id.0,
-            version,
-            snapshot_data
         )
+        .bind(aggregate_id)
+        .bind(self.tenant_context.tenant_id.0)
+        .bind(version)
+        .bind(snapshot_data)
         .execute(&self.pool)
         .await?;
 
@@ -416,52 +415,49 @@ impl CustomerEventStore for PostgresCustomerEventStore {
     }
 
     async fn load_snapshot(&self, aggregate_id: Uuid) -> Result<Option<(i64, serde_json::Value)>> {
-        let snapshot = sqlx::query!(
+        let snapshot = sqlx::query(
             "SELECT version, snapshot_data FROM customer_snapshots WHERE aggregate_id = $1 AND tenant_id = $2",
-            aggregate_id,
-            self.tenant_context.tenant_id.0
         )
+        .bind(aggregate_id)
+        .bind(self.tenant_context.tenant_id.0)
         .fetch_optional(&self.pool)
         .await?;
 
-        Ok(snapshot.map(|s| (s.version, s.snapshot_data)))
+        Ok(snapshot.map(|s| (s.try_get("version").unwrap(), s.try_get("snapshot_data").unwrap())))
     }
 
     async fn get_event_statistics(&self) -> Result<EventStatistics> {
-        let total_events = sqlx::query_scalar!(
+        let total_events = sqlx::query_scalar::<_, i64>(
             "SELECT COUNT(*) FROM customer_events WHERE tenant_id = $1",
-            self.tenant_context.tenant_id.0
         )
+        .bind(self.tenant_context.tenant_id.0)
         .fetch_one(&self.pool)
-        .await?
-        .unwrap_or(0);
+        .await?;
 
-        let events_last_24h = sqlx::query_scalar!(
+        let events_last_24h = sqlx::query_scalar::<_, i64>(
             "SELECT COUNT(*) FROM customer_events WHERE tenant_id = $1 AND recorded_at > NOW() - INTERVAL '24 hours'",
-            self.tenant_context.tenant_id.0
         )
+        .bind(self.tenant_context.tenant_id.0)
         .fetch_one(&self.pool)
-        .await?
-        .unwrap_or(0);
+        .await?;
 
-        let unique_aggregates = sqlx::query_scalar!(
+        let unique_aggregates = sqlx::query_scalar::<_, i64>(
             "SELECT COUNT(DISTINCT aggregate_id) FROM customer_events WHERE tenant_id = $1",
-            self.tenant_context.tenant_id.0
         )
+        .bind(self.tenant_context.tenant_id.0)
         .fetch_one(&self.pool)
-        .await?
-        .unwrap_or(0);
+        .await?;
 
-        let type_counts = sqlx::query!(
+        let type_counts = sqlx::query(
             "SELECT event_type, COUNT(*) as count FROM customer_events WHERE tenant_id = $1 GROUP BY event_type",
-            self.tenant_context.tenant_id.0
         )
+        .bind(self.tenant_context.tenant_id.0)
         .fetch_all(&self.pool)
         .await?;
 
         let mut events_by_type = HashMap::new();
         for record in type_counts {
-            events_by_type.insert(record.event_type, record.count.unwrap_or(0));
+            events_by_type.insert(record.try_get("event_type")?, record.try_get::<Option<i64>, _>("count")?.unwrap_or(0));
         }
 
         // Estimate storage size (simplified)

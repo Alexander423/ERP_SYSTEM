@@ -6,6 +6,7 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc, Weekday, Timelike, Datelike};
 use serde::{Deserialize, Serialize};
+use sqlx::Row;
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
@@ -743,16 +744,16 @@ impl AccessControl for AccessControlService {
     }
 
     async fn assign_role(&self, user_id: Uuid, role: &Role, assigned_by: Uuid) -> Result<()> {
-        sqlx::query!(
+        sqlx::query(
             r#"
             INSERT INTO user_roles (user_id, role_id, assigned_by, assigned_at)
             VALUES ($1, $2, $3, NOW())
             ON CONFLICT (user_id, role_id) DO NOTHING
-            "#,
-            user_id,
-            role.id,
-            assigned_by
+            "#
         )
+        .bind(user_id)
+        .bind(role.id)
+        .bind(assigned_by)
         .execute(&self.pool)
         .await?;
 
@@ -766,11 +767,11 @@ impl AccessControl for AccessControlService {
     }
 
     async fn remove_role(&self, user_id: Uuid, role_id: Uuid, removed_by: Uuid) -> Result<()> {
-        sqlx::query!(
-            "DELETE FROM user_roles WHERE user_id = $1 AND role_id = $2",
-            user_id,
-            role_id
+        sqlx::query(
+            "DELETE FROM user_roles WHERE user_id = $1 AND role_id = $2"
         )
+        .bind(user_id)
+        .bind(role_id)
         .execute(&self.pool)
         .await?;
 
@@ -786,35 +787,35 @@ impl AccessControl for AccessControlService {
     async fn create_role(&self, role: &Role, created_by: Uuid) -> Result<Uuid> {
         let role_id = Uuid::new_v4();
 
-        sqlx::query!(
+        sqlx::query(
             r#"
             INSERT INTO roles (id, name, description, is_system_role, tenant_id, created_by, created_at)
             VALUES ($1, $2, $3, $4, $5, $6, NOW())
-            "#,
-            role_id,
-            role.name,
-            role.description,
-            role.priority as i16,
-            role.is_system_role,
-            role.tenant_id,
-            created_by
+            "#
         )
+        .bind(role_id)
+        .bind(&role.name)
+        .bind(&role.description)
+        .bind(role.priority as i16)
+        .bind(role.is_system_role)
+        .bind(role.tenant_id)
+        .bind(created_by)
         .execute(&self.pool)
         .await?;
 
         // Insert role permissions
         for permission in &role.permissions {
-            sqlx::query!(
+            sqlx::query(
                 r#"
                 INSERT INTO role_permissions (role_id, permission_id, resource_type, action, scope, created_at)
                 VALUES ($1, $2, $3, $4, $5, NOW())
-                "#,
-                role_id,
-                permission.id,
-                serde_json::to_string(&permission.resource_type).unwrap(),
-                serde_json::to_string(&permission.action).unwrap(),
-                serde_json::to_string(&permission.scope).unwrap()
+                "#
             )
+            .bind(role_id)
+            .bind(permission.id)
+            .bind(serde_json::to_string(&permission.resource_type).unwrap())
+            .bind(serde_json::to_string(&permission.action).unwrap())
+            .bind(serde_json::to_string(&permission.scope).unwrap())
             .execute(&self.pool)
             .await?;
         }
@@ -823,7 +824,7 @@ impl AccessControl for AccessControlService {
     }
 
     async fn update_role(&self, role: &Role, updated_by: Uuid) -> Result<()> {
-        sqlx::query!(
+        sqlx::query(
             r#"
             UPDATE roles SET
                 name = $2,
@@ -832,13 +833,13 @@ impl AccessControl for AccessControlService {
                 modified_by = $5,
                 modified_at = NOW()
             WHERE id = $1
-            "#,
-            role.id,
-            role.name,
-            role.description,
-            role.priority as i16,
-            updated_by
+            "#
         )
+        .bind(role.id)
+        .bind(&role.name)
+        .bind(&role.description)
+        .bind(role.priority as i16)
+        .bind(updated_by)
         .execute(&self.pool)
         .await?;
 
@@ -909,10 +910,10 @@ impl AccessControlService {
         processed.insert(role_id);
 
         // Load role from database
-        let role_record = sqlx::query!(
-            "SELECT name, description, priority FROM roles WHERE id = $1",
-            role_id
+        let role_record = sqlx::query(
+            "SELECT name, description, priority FROM roles WHERE id = $1"
         )
+        .bind(role_id)
         .fetch_optional(&self.pool)
         .await?;
 
@@ -921,25 +922,25 @@ impl AccessControlService {
         }
 
         // Load role permissions
-        let role_permissions = sqlx::query!(
+        let role_permissions = sqlx::query(
             r#"
             SELECT permission_id, resource_type, action, scope
             FROM role_permissions
             WHERE role_id = $1
-            "#,
-            role_id
+            "#
         )
+        .bind(role_id)
         .fetch_all(&self.pool)
         .await?;
 
         for perm_record in role_permissions {
             let permission = Permission {
-                id: perm_record.permission_id,
-                resource_type: serde_json::from_str(&perm_record.resource_type).unwrap_or(ResourceType::Customer),
-                action: serde_json::from_str(&perm_record.action).unwrap_or(Action::Read),
+                id: perm_record.get("permission_id"),
+                resource_type: serde_json::from_str(perm_record.get::<String, _>("resource_type").as_str()).unwrap_or(ResourceType::Customer),
+                action: serde_json::from_str(perm_record.get::<String, _>("action").as_str()).unwrap_or(Action::Read),
                 field_restrictions: None,
                 conditions: None,
-                scope: serde_json::from_str(&perm_record.scope).unwrap_or(PermissionScope::Own),
+                scope: serde_json::from_str(perm_record.get::<String, _>("scope").as_str()).unwrap_or(PermissionScope::Own),
                 time_restrictions: None,
             };
 
@@ -947,15 +948,15 @@ impl AccessControlService {
         }
 
         // Load parent roles and process recursively
-        let parent_roles = sqlx::query!(
-            "SELECT parent_role_id FROM role_hierarchy WHERE child_role_id = $1",
-            role_id
+        let parent_roles = sqlx::query(
+            "SELECT parent_role_id FROM role_hierarchy WHERE child_role_id = $1"
         )
+        .bind(role_id)
         .fetch_all(&self.pool)
         .await?;
 
         for parent_record in parent_roles {
-            self.collect_role_permissions(parent_record.parent_role_id, permissions, processed).await?;
+            Box::pin(self.collect_role_permissions(parent_record.get("parent_role_id"), permissions, processed)).await?;
         }
 
         Ok(())

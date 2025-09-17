@@ -22,13 +22,13 @@ impl TestContext {
         let tenant_id = TenantId(Uuid::new_v4());
         let test_user_id = Uuid::new_v4();
 
-        sqlx::query!(
+        sqlx::query(
             "INSERT INTO tenants (id, name, settings, created_by, modified_by)
              VALUES ($1, $2, '{}', $3, $3)",
-            tenant_id.0,
-            format!("Test Tenant {}", tenant_id.0),
-            test_user_id
         )
+        .bind(tenant_id.0)
+        .bind(format!("Test Tenant {}", tenant_id.0))
+        .bind(test_user_id)
         .execute(&pool)
         .await
         .expect("Failed to create test tenant");
@@ -41,7 +41,8 @@ impl TestContext {
     }
 
     pub async fn cleanup(&self) {
-        sqlx::query!("DELETE FROM tenants WHERE id = $1", self.tenant_id.0)
+        sqlx::query("DELETE FROM tenants WHERE id = $1")
+            .bind(self.tenant_id.0)
             .execute(&self.pool)
             .await
             .expect("Failed to cleanup test tenant");

@@ -2,9 +2,11 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use uuid::Uuid;
+use sqlx::{PgPool, Row};
+use rust_decimal::Decimal;
 
 use crate::customer::model::*;
-use crate::types::{BusinessSize, EntityStatus, SyncStatus};
+use crate::types::{BusinessSize, EntityStatus, SyncStatus, IndustryClassification};
 use crate::error::{MasterDataError, Result};
 
 /// Advanced search capabilities for customers
@@ -291,7 +293,7 @@ impl AdvancedSearchEngine {
 
     pub async fn initialize_search_index(&self) -> Result<()> {
         // For PostgreSQL-only implementation, we refresh the materialized view
-        sqlx::query!("SELECT refresh_customer_search_cache()")
+        sqlx::query("SELECT refresh_customer_search_cache()")
             .execute(&self.pool)
             .await?;
 
@@ -343,7 +345,7 @@ impl AdvancedSearchEngine {
     }
 
     fn calculate_semantic_relevance(&self, customer: &Customer, query: &str) -> f64 {
-        let mut relevance = 1.0;
+        let mut relevance: f64 = 1.0;
         let query_lower = query.to_lowercase();
 
         // Boost relevance based on business context
@@ -359,7 +361,7 @@ impl AdvancedSearchEngine {
             relevance *= 1.2;
         }
 
-        relevance.min(2.0) // Cap at 2x boost
+        relevance.min(2.0f64) // Cap at 2x boost
     }
 
     fn calculate_customer_similarity(&self, reference: &Customer, candidate: &sqlx::postgres::PgRow) -> f64 {
@@ -367,32 +369,40 @@ impl AdvancedSearchEngine {
         let mut factors = 0;
 
         // Industry similarity (high weight)
-        if reference.industry_classification == candidate.get("industry_classification") {
-            score += 0.3;
+        if let Ok(industry) = candidate.try_get::<IndustryClassification, _>("industry_classification") {
+            if reference.industry_classification == industry {
+                score += 0.3;
+            }
         }
         factors += 1;
 
         // Customer type similarity (high weight)
-        if reference.customer_type == candidate.get("customer_type") {
-            score += 0.25;
+        if let Ok(ctype) = candidate.try_get::<CustomerType, _>("customer_type") {
+            if reference.customer_type == ctype {
+                score += 0.25;
+            }
         }
         factors += 1;
 
         // Lifecycle stage similarity
-        if reference.lifecycle_stage == candidate.get("lifecycle_stage") {
-            score += 0.2;
+        if let Ok(stage) = candidate.try_get::<CustomerLifecycleStage, _>("lifecycle_stage") {
+            if reference.lifecycle_stage == stage {
+                score += 0.2;
+            }
         }
         factors += 1;
 
         // Revenue similarity (normalize to 0-1 scale)
-        let ref_clv = reference.customer_lifetime_value.unwrap_or_default().to_f64().unwrap_or(0.0);
-        let candidate_clv = candidate.get::<Option<rust_decimal::Decimal>, _>("customer_lifetime_value")
+        let ref_clv = reference.customer_lifetime_value.unwrap_or_default();
+        let candidate_clv = candidate.try_get::<Option<Decimal>, _>("customer_lifetime_value")
             .unwrap_or_default()
-            .to_f64()
-            .unwrap_or(0.0);
+            .unwrap_or_default();
 
-        if ref_clv > 0.0 && candidate_clv > 0.0 {
-            let ratio = (ref_clv / candidate_clv).min(candidate_clv / ref_clv);
+        let ref_clv_f64 = ref_clv.to_string().parse::<f64>().unwrap_or(0.0);
+        let candidate_clv_f64 = candidate_clv.to_string().parse::<f64>().unwrap_or(0.0);
+
+        if ref_clv_f64 > 0.0 && candidate_clv_f64 > 0.0 {
+            let ratio = (ref_clv_f64 / candidate_clv_f64).min(candidate_clv_f64 / ref_clv_f64);
             score += ratio * 0.25;
         }
         factors += 1;
@@ -403,26 +413,34 @@ impl AdvancedSearchEngine {
     fn get_matching_attributes(&self, reference: &Customer, candidate: &sqlx::postgres::PgRow) -> Vec<String> {
         let mut matches = Vec::new();
 
-        if reference.customer_type == candidate.get("customer_type") {
-            matches.push("Customer Type".to_string());
+        if let Ok(ctype) = candidate.try_get::<CustomerType, _>("customer_type") {
+            if reference.customer_type == ctype {
+                matches.push("Customer Type".to_string());
+            }
         }
 
-        if reference.industry_classification == candidate.get("industry_classification") {
-            matches.push("Industry".to_string());
+        if let Ok(industry) = candidate.try_get::<IndustryClassification, _>("industry_classification") {
+            if reference.industry_classification == industry {
+                matches.push("Industry".to_string());
+            }
         }
 
-        if reference.lifecycle_stage == candidate.get("lifecycle_stage") {
-            matches.push("Lifecycle Stage".to_string());
+        if let Ok(stage) = candidate.try_get::<CustomerLifecycleStage, _>("lifecycle_stage") {
+            if reference.lifecycle_stage == stage {
+                matches.push("Lifecycle Stage".to_string());
+            }
         }
 
         // Revenue range matching
-        let ref_clv = reference.customer_lifetime_value.unwrap_or_default().to_f64().unwrap_or(0.0);
-        let candidate_clv = candidate.get::<Option<rust_decimal::Decimal>, _>("customer_lifetime_value")
+        let ref_clv = reference.customer_lifetime_value.unwrap_or_default();
+        let candidate_clv = candidate.try_get::<Option<Decimal>, _>("customer_lifetime_value")
             .unwrap_or_default()
-            .to_f64()
-            .unwrap_or(0.0);
+            .unwrap_or_default();
 
-        if (ref_clv - candidate_clv).abs() / ref_clv.max(1.0) < 0.3 {
+        let ref_clv_f64 = ref_clv.to_string().parse::<f64>().unwrap_or(0.0);
+        let candidate_clv_f64 = candidate_clv.to_string().parse::<f64>().unwrap_or(0.0);
+
+        if (ref_clv_f64 - candidate_clv_f64).abs() / ref_clv_f64.max(1.0_f64) < 0.3 {
             matches.push("Revenue Range".to_string());
         }
 
@@ -442,10 +460,10 @@ impl CustomerSearchEngine for AdvancedSearchEngine {
             .collect::<Vec<_>>()
             .join(" & ");
 
-        let customers = sqlx::query!(
+        let customers = sqlx::query(
             r#"
-            SELECT c.id, c.customer_number, c.legal_name, c.customer_type as "customer_type: CustomerType",
-                   c.lifecycle_stage as "lifecycle_stage: CustomerLifecycleStage",
+            SELECT c.id, c.customer_number, c.legal_name, c.customer_type,
+                   c.lifecycle_stage,
                    c.industry_classification, c.customer_lifetime_value, c.credit_limit,
                    c.created_at, c.modified_at,
                    ts_rank(
@@ -466,11 +484,11 @@ impl CustomerSearchEngine for AdvancedSearchEngine {
             ORDER BY search_rank DESC, c.legal_name ASC
             LIMIT $3 OFFSET $4
             "#,
-            self.tenant_context.tenant_id.0,
-            query,
-            options.limit as i64,
-            options.offset as i64
         )
+        .bind(self.tenant_context.tenant_id.0)
+        .bind(query)
+        .bind(options.limit as i64)
+        .bind(options.offset as i64)
         .fetch_all(&self.pool)
         .await?;
 
@@ -478,10 +496,11 @@ impl CustomerSearchEngine for AdvancedSearchEngine {
         let mut max_score = 0.0;
 
         for (index, customer_row) in customers.iter().enumerate() {
-            let customer = self.load_customer_by_id(customer_row.id).await?;
+            let customer_id: Uuid = customer_row.try_get("id")?;
+            let customer = self.load_customer_by_id(customer_id).await?;
             if let Some(customer_data) = customer {
-                let score = customer_row.search_rank.unwrap_or(0.0) as f64;
-                max_score = max_score.max(score);
+                let score = customer_row.try_get::<Option<f64>, _>("search_rank")?.unwrap_or(0.0);
+                max_score = f64::max(max_score, score as f64);
 
                 customer_results.push(CustomerSearchResult {
                     customer: customer_data,
@@ -493,10 +512,11 @@ impl CustomerSearchEngine for AdvancedSearchEngine {
         }
 
         let search_time_ms = start_time.elapsed().as_millis() as u64;
+        let total_count = customer_results.len() as u64;
 
         Ok(SearchResults {
             customers: customer_results,
-            total_count: customer_results.len() as u64,
+            total_count,
             max_score,
             search_time_ms,
             facets: None,
@@ -528,17 +548,14 @@ impl CustomerSearchEngine for AdvancedSearchEngine {
     async fn find_similar_customers(&self, customer_id: Uuid, similarity_threshold: f64) -> Result<Vec<CustomerSimilarity>> {
         // Load the reference customer
         let reference_customer = self.load_customer_by_id(customer_id).await?
-            .ok_or_else(|| crate::error::MasterDataError::NotFound {
-                entity: "customer".to_string(),
-                id: customer_id.to_string(),
-            })?;
+            .ok_or_else(|| crate::error::MasterDataError::NotFound)?;
 
         // Find similar customers based on multiple criteria
-        let similar_customers = sqlx::query!(
+        let similar_customers = sqlx::query(
             r#"
-            SELECT id, legal_name, customer_type as "customer_type: CustomerType",
+            SELECT id, legal_name, customer_type,
                    industry_classification, customer_lifetime_value, credit_limit,
-                   lifecycle_stage as "lifecycle_stage: CustomerLifecycleStage"
+                   lifecycle_stage
             FROM customers
             WHERE tenant_id = $1 AND NOT is_deleted AND id != $2
               AND (
@@ -554,13 +571,13 @@ impl CustomerSearchEngine for AdvancedSearchEngine {
               ABS(COALESCE(customer_lifetime_value, 0) - $5) ASC
             LIMIT 20
             "#,
-            self.tenant_context.tenant_id.0,
-            customer_id,
-            reference_customer.customer_type as CustomerType,
-            reference_customer.industry_classification,
-            reference_customer.customer_lifetime_value.unwrap_or(rust_decimal::Decimal::ZERO),
-            reference_customer.lifecycle_stage as CustomerLifecycleStage
         )
+        .bind(self.tenant_context.tenant_id.0)
+        .bind(customer_id)
+        .bind(reference_customer.customer_type.clone() as CustomerType)
+        .bind(reference_customer.industry_classification.clone())
+        .bind(reference_customer.customer_lifetime_value.unwrap_or(rust_decimal::Decimal::ZERO))
+        .bind(reference_customer.lifecycle_stage.clone() as CustomerLifecycleStage)
         .fetch_all(&self.pool)
         .await?;
 
@@ -569,9 +586,11 @@ impl CustomerSearchEngine for AdvancedSearchEngine {
             let similarity_score = self.calculate_customer_similarity(&reference_customer, &similar);
 
             if similarity_score >= similarity_threshold {
+                let similar_id: Uuid = similar.try_get("id")?;
+                let customer_name: String = similar.try_get("legal_name")?;
                 similarities.push(CustomerSimilarity {
-                    customer_id: similar.id,
-                    customer_name: similar.legal_name,
+                    customer_id: similar_id,
+                    customer_name,
                     similarity_score,
                     matching_attributes: self.get_matching_attributes(&reference_customer, &similar),
                 });

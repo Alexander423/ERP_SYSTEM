@@ -391,13 +391,14 @@ async fn test_sql_injection_prevention() {
     assert_eq!(search_result.customers.len(), 0);
 
     // Verify customers table still exists
-    let count_result = sqlx::query!("SELECT COUNT(*) as count FROM customers WHERE tenant_id = $1", ctx.tenant_id.0)
+    let count_result = sqlx::query("SELECT COUNT(*) as count FROM customers WHERE tenant_id = $1")
+        .bind(ctx.tenant_id.0)
         .fetch_one(&pool)
         .await
         .expect("Table should still exist after injection attempt");
 
     // This verifies the table wasn't dropped
-    assert!(count_result.count.is_some());
+    assert!(count_result.try_get::<Option<i64>, _>("count").unwrap_or(Some(0)).is_some());
 
     ctx.cleanup().await;
 }

@@ -78,6 +78,10 @@ pub struct Customer {
     // Integration & Sync
     pub sync_info: SyncInfo,
 
+    // Custom & Extended Data
+    pub custom_fields: HashMap<String, serde_json::Value>,
+    pub contract_ids: Vec<Uuid>,
+
     // Audit Trail
     pub audit: AuditFields,
 }
@@ -198,9 +202,16 @@ pub struct CustomerSegment {
 pub struct CustomerPerformanceMetrics {
     // Financial Metrics
     pub total_revenue: Option<Decimal>,
+    pub revenue_last_12_months: Option<f64>,
     pub average_order_value: Option<Decimal>,
+    pub order_frequency: Option<f64>,
     pub total_orders: Option<i64>,
     pub last_order_date: Option<DateTime<Utc>>,
+    pub profit_margin: Option<f64>,
+    pub last_purchase_date: Option<DateTime<Utc>>,
+    pub first_purchase_date: Option<DateTime<Utc>>,
+    pub customer_lifetime_value: Option<f64>,
+    pub predicted_churn_probability: Option<f64>,
 
     // Relationship Metrics
     pub relationship_duration_days: Option<i32>,
@@ -228,10 +239,21 @@ pub struct CustomerBehavioralData {
     pub preferred_purchase_channels: Vec<String>,
     pub seasonal_purchase_patterns: HashMap<String, f64>,
     pub product_category_preferences: HashMap<String, f64>,
+    pub purchase_frequency: Option<f64>,
+    pub preferred_categories: HashMap<String, f64>,
+    pub seasonal_trends: HashMap<String, f64>,
+    pub price_sensitivity: Option<f64>,
+    pub brand_loyalty: Option<f64>,
 
     // Communication Behavior
     pub preferred_contact_times: Vec<String>, // e.g., ["morning", "weekday"]
     pub channel_engagement_rates: HashMap<String, f64>, // email, phone, etc.
+    pub communication_preferences: HashMap<String, String>,
+
+    // Service & Support
+    pub support_ticket_frequency: Option<f64>,
+    pub product_return_rate: Option<f64>,
+    pub referral_activity: Option<f64>,
 
     // Digital Behavior
     pub website_engagement_score: Option<f64>,
@@ -513,9 +535,16 @@ impl Default for CustomerPerformanceMetrics {
     fn default() -> Self {
         Self {
             total_revenue: None,
+            revenue_last_12_months: None,
             average_order_value: None,
+            order_frequency: None,
             total_orders: None,
             last_order_date: None,
+            profit_margin: None,
+            last_purchase_date: None,
+            first_purchase_date: None,
+            customer_lifetime_value: None,
+            predicted_churn_probability: None,
             relationship_duration_days: None,
             satisfaction_score: None,
             net_promoter_score: None,
@@ -536,8 +565,17 @@ impl Default for CustomerBehavioralData {
             preferred_purchase_channels: Vec::new(),
             seasonal_purchase_patterns: HashMap::new(),
             product_category_preferences: HashMap::new(),
+            purchase_frequency: None,
+            preferred_categories: HashMap::new(),
+            seasonal_trends: HashMap::new(),
+            price_sensitivity: None,
+            brand_loyalty: None,
             preferred_contact_times: Vec::new(),
             channel_engagement_rates: HashMap::new(),
+            communication_preferences: HashMap::new(),
+            support_ticket_frequency: None,
+            product_return_rate: None,
+            referral_activity: None,
             website_engagement_score: None,
             mobile_app_usage: None,
             social_media_sentiment: None,

@@ -6,6 +6,7 @@
 use async_trait::async_trait;
 use chrono::Timelike;
 use serde::{Deserialize, Serialize};
+use sqlx::Row;
 use std::collections::HashMap;
 use uuid::Uuid;
 
@@ -488,7 +489,7 @@ impl SecurityAuditService {
 #[async_trait]
 impl AuditLogger for SecurityAuditService {
     async fn log_security_event(&self, event: &AuditEvent) -> Result<()> {
-        sqlx::query!(
+        sqlx::query(
             r#"
             INSERT INTO security_audit_log (
                 id, event_type, event_category, user_id, tenant_id, resource_type, resource_id,
@@ -496,25 +497,25 @@ impl AuditLogger for SecurityAuditService {
                 correlation_id, source_system, timestamp, retention_until
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::inet, $13, $14, $15, $16, $17, $18)
             "#,
-            event.id,
-            serde_json::to_string(&event.event_type).unwrap(),
-            serde_json::to_string(&event.event_category).unwrap(),
-            event.user_id,
-            event.tenant_id,
-            event.resource_type,
-            event.resource_id,
-            event.action,
-            serde_json::to_string(&event.outcome).unwrap(),
-            serde_json::to_string(&event.risk_level).unwrap(),
-            serde_json::to_value(&event.event_data).unwrap(),
-            event.ip_address,
-            event.user_agent,
-            event.session_id,
-            event.correlation_id,
-            event.source_system,
-            event.timestamp,
-            event.retention_until,
         )
+        .bind(event.id)
+        .bind(serde_json::to_string(&event.event_type).unwrap())
+        .bind(serde_json::to_string(&event.event_category).unwrap())
+        .bind(event.user_id)
+        .bind(event.tenant_id)
+        .bind(&event.resource_type)
+        .bind(event.resource_id)
+        .bind(&event.action)
+        .bind(serde_json::to_string(&event.outcome).unwrap())
+        .bind(serde_json::to_string(&event.risk_level).unwrap())
+        .bind(serde_json::to_value(&event.event_data).unwrap())
+        .bind(&event.ip_address)
+        .bind(&event.user_agent)
+        .bind(&event.session_id)
+        .bind(event.correlation_id)
+        .bind(&event.source_system)
+        .bind(event.timestamp)
+        .bind(event.retention_until)
         .execute(&self.pool)
         .await?;
 
@@ -642,12 +643,12 @@ impl AuditLogger for SecurityAuditService {
     }
 
     async fn archive_logs(&self, retention_policy: &RetentionPolicy) -> Result<u64> {
-        let archived_count = sqlx::query!(
+        let archived_count = sqlx::query(
             "SELECT cleanup_old_audit_logs() as count"
         )
         .fetch_one(&self.pool)
         .await?
-        .count
+        .get::<Option<i64>, _>("count")
         .unwrap_or(0) as u64;
 
         Ok(archived_count)

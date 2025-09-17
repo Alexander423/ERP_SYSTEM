@@ -1061,24 +1061,24 @@ impl ComplianceFramework for GdprCompliance {
         finding_id: Uuid,
         action: &RemediationAction,
     ) -> Result<()> {
-        sqlx::query!(
+        sqlx::query(
             r#"
             INSERT INTO remediation_actions (
                 id, finding_id, action_title, action_description, action_type,
                 priority, assigned_to, target_completion_date, status, progress_percentage
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-            "#,
-            action.id,
-            finding_id,
-            action.action_title,
-            action.action_description,
-            serde_json::to_string(&action.action_type).unwrap(),
-            serde_json::to_string(&action.priority).unwrap(),
-            action.assigned_to,
-            action.target_completion_date,
-            serde_json::to_string(&action.status).unwrap(),
-            action.progress_percentage as i16
+            "#
         )
+        .bind(action.id)
+        .bind(finding_id)
+        .bind(&action.action_title)
+        .bind(&action.action_description)
+        .bind(serde_json::to_string(&action.action_type).unwrap())
+        .bind(serde_json::to_string(&action.priority).unwrap())
+        .bind(action.assigned_to)
+        .bind(action.target_completion_date)
+        .bind(serde_json::to_string(&action.status).unwrap())
+        .bind(action.progress_percentage as i16)
         .execute(&self.pool)
         .await?;
 

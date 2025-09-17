@@ -226,7 +226,7 @@ pub enum BusinessSize {
 }
 
 /// Industry classification systems
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type, PartialEq)]
 #[sqlx(type_name = "industry_classification", rename_all = "snake_case")]
 pub enum IndustryClassification {
     Technology,

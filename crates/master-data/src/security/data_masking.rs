@@ -7,6 +7,7 @@ use async_trait::async_trait;
 use rand::Rng;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+use sqlx::Row;
 use std::collections::HashMap;
 use uuid::Uuid;
 
@@ -775,21 +776,23 @@ impl DataMasking for DataMaskingService {
         context: &MaskingContext,
     ) -> Result<bool> {
         // Load policies for the field
-        let policies = sqlx::query!(
+        let policies = sqlx::query(
             r#"
             SELECT exemptions FROM data_masking_policies
             WHERE column_name = $1 AND tenant_id = $2 AND is_active = true
-            "#,
-            field,
-            context.tenant_id
+            "#
         )
+        .bind(field)
+        .bind(context.tenant_id)
         .fetch_all(&self.pool)
         .await?;
 
         for policy_record in policies {
-            if let Ok(exemptions) = serde_json::from_value::<Vec<MaskingExemption>>(policy_record.exemptions.unwrap_or_default()) {
-                if self.check_exemptions(&exemptions, context) {
-                    return Ok(true);
+            if let Ok(exemptions_json) = policy_record.try_get::<serde_json::Value, _>("exemptions") {
+                if let Ok(exemptions) = serde_json::from_value::<Vec<MaskingExemption>>(exemptions_json) {
+                    if self.check_exemptions(&exemptions, context) {
+                        return Ok(true);
+                    }
                 }
             }
         }

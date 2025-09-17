@@ -1,5 +1,4 @@
 use async_trait::async_trait;
-use std::collections::HashMap;
 use uuid::Uuid;
 use validator::Validate;
 
@@ -149,7 +148,16 @@ impl CustomerService for DefaultCustomerService {
         // Apply business rule filters
         let filtered_criteria = self.apply_business_rule_filters(criteria).await?;
 
-        self.repository.search_customers(&filtered_criteria).await
+        let customers = self.repository.search_customers(&filtered_criteria).await?;
+
+        // Convert to CustomerSearchResponse with basic pagination info
+        Ok(CustomerSearchResponse {
+            customers,
+            total_count: 0, // Would need separate count query
+            page: 1,
+            page_size: 50,
+            total_pages: 1,
+        })
     }
 
     async fn delete_customer(&self, id: Uuid, deleted_by: Uuid) -> Result<()> {
@@ -227,9 +235,16 @@ impl CustomerService for DefaultCustomerService {
         // For now, return basic metrics structure
         Ok(CustomerPerformanceMetrics {
             total_revenue: None,
+            revenue_last_12_months: None,
             average_order_value: None,
+            order_frequency: None,
             total_orders: None,
             last_order_date: None,
+            profit_margin: None,
+            last_purchase_date: None,
+            first_purchase_date: None,
+            customer_lifetime_value: None,
+            predicted_churn_probability: None,
             relationship_duration_days: None,
             satisfaction_score: None,
             net_promoter_score: None,

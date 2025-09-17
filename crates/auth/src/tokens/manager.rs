@@ -5,6 +5,7 @@ use erp_core::{
     DatabasePool, TenantContext,
 };
 use redis::{aio::ConnectionManager, AsyncCommands};
+use sqlx::Row;
 use std::collections::HashMap;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
@@ -252,14 +253,14 @@ impl TokenManager {
 
         // Mark tokens as used in database
         let pool = self.db.get_tenant_pool(tenant).await?;
-        let invalidated_count = sqlx::query!(
-            "UPDATE verification_tokens 
-             SET used = true, used_at = NOW() 
-             WHERE tenant_id = $1 AND user_id = $2 AND purpose = $3 AND used = false AND expires_at > NOW()",
-            tenant.tenant_id.0,
-            user_id,
-            purpose.to_string()
+        let invalidated_count = sqlx::query(
+            "UPDATE verification_tokens
+             SET used = true, used_at = NOW()
+             WHERE tenant_id = $1 AND user_id = $2 AND purpose = $3 AND used = false AND expires_at > NOW()"
         )
+        .bind(tenant.tenant_id.0)
+        .bind(user_id)
+        .bind(purpose.to_string())
         .execute(pool.get())
         .await?
         .rows_affected() as u32;
@@ -291,10 +292,10 @@ impl TokenManager {
         info!("Cleaning up expired tokens");
 
         let pool = self.db.get_tenant_pool(tenant).await?;
-        let deleted_count = sqlx::query!(
-            "DELETE FROM verification_tokens WHERE tenant_id = $1 AND expires_at < NOW()",
-            tenant.tenant_id.0
+        let deleted_count = sqlx::query(
+            "DELETE FROM verification_tokens WHERE tenant_id = $1 AND expires_at < NOW()"
         )
+        .bind(tenant.tenant_id.0)
         .execute(pool.get())
         .await?
         .rows_affected() as u32;
@@ -307,30 +308,30 @@ impl TokenManager {
     pub async fn get_token_stats(&self, tenant: &TenantContext) -> Result<TokenStats> {
         let pool = self.db.get_tenant_pool(tenant).await?;
         
-        let stats = sqlx::query!(
+        let stats = sqlx::query(
             r#"
-            SELECT 
+            SELECT
                 purpose,
                 COUNT(*) as total,
                 COUNT(*) FILTER (WHERE used = false AND expires_at > NOW()) as active,
                 COUNT(*) FILTER (WHERE used = true) as used,
                 COUNT(*) FILTER (WHERE expires_at < NOW()) as expired
-            FROM verification_tokens 
+            FROM verification_tokens
             WHERE tenant_id = $1
             GROUP BY purpose
-            "#,
-            tenant.tenant_id.0
+            "#
         )
+        .bind(tenant.tenant_id.0)
         .fetch_all(pool.get())
         .await?;
 
         let mut by_purpose = HashMap::new();
         for row in stats {
-            by_purpose.insert(row.purpose, PurposeStats {
-                total: row.total.unwrap_or(0) as u32,
-                active: row.active.unwrap_or(0) as u32,
-                used: row.used.unwrap_or(0) as u32,
-                expired: row.expired.unwrap_or(0) as u32,
+            by_purpose.insert(row.try_get("purpose")?, PurposeStats {
+                total: row.try_get::<Option<i64>, _>("total")?.unwrap_or(0) as u32,
+                active: row.try_get::<Option<i64>, _>("active")?.unwrap_or(0) as u32,
+                used: row.try_get::<Option<i64>, _>("used")?.unwrap_or(0) as u32,
+                expired: row.try_get::<Option<i64>, _>("expired")?.unwrap_or(0) as u32,
             });
         }
 
@@ -343,27 +344,27 @@ impl TokenManager {
         let pool = self.db.get_tenant_pool(tenant).await?;
         let db_token: VerificationToken = token_data.clone().into();
 
-        sqlx::query!(
+        sqlx::query(
             r#"
             INSERT INTO verification_tokens (
                 id, token, purpose, user_id, tenant_id, email, metadata,
                 created_at, expires_at, used, used_at, created_ip, used_ip
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-            "#,
-            db_token.id,
-            db_token.token,
-            db_token.purpose,
-            db_token.user_id,
-            db_token.tenant_id,
-            db_token.email,
-            db_token.metadata,
-            db_token.created_at,
-            db_token.expires_at,
-            db_token.used,
-            db_token.used_at,
-            db_token.created_ip,
-            db_token.used_ip
+            "#
         )
+        .bind(db_token.id)
+        .bind(&db_token.token)
+        .bind(&db_token.purpose)
+        .bind(db_token.user_id)
+        .bind(db_token.tenant_id)
+        .bind(&db_token.email)
+        .bind(&db_token.metadata)
+        .bind(db_token.created_at)
+        .bind(db_token.expires_at)
+        .bind(db_token.used)
+        .bind(db_token.used_at)
+        .bind(&db_token.created_ip)
+        .bind(&db_token.used_ip)
         .execute(pool.get())
         .await?;
 
@@ -379,20 +380,40 @@ impl TokenManager {
     ) -> Result<Option<TokenData>> {
         let pool = self.db.get_tenant_pool(tenant).await?;
         
-        let db_token = sqlx::query_as!(
-            VerificationToken,
+        let row = sqlx::query(
             r#"
             SELECT id, token, purpose, user_id, tenant_id, email, metadata,
                    created_at, expires_at, used, used_at, created_ip, used_ip
             FROM verification_tokens
             WHERE token = $1 AND purpose = $2 AND tenant_id = $3
-            "#,
-            token,
-            purpose.to_string(),
-            tenant.tenant_id.0
+            "#
         )
+        .bind(token)
+        .bind(purpose.to_string())
+        .bind(tenant.tenant_id.0)
         .fetch_optional(pool.get())
         .await?;
+
+        let db_token: Option<VerificationToken> = match row {
+            Some(row) => {
+                Some(VerificationToken {
+                    id: row.try_get("id")?,
+                    token: row.try_get("token")?,
+                    purpose: row.try_get("purpose")?,
+                    user_id: row.try_get("user_id")?,
+                    tenant_id: row.try_get("tenant_id")?,
+                    email: row.try_get("email")?,
+                    metadata: row.try_get("metadata")?,
+                    created_at: row.try_get("created_at")?,
+                    expires_at: row.try_get("expires_at")?,
+                    used: row.try_get("used")?,
+                    used_at: row.try_get("used_at")?,
+                    created_ip: row.try_get("created_ip")?,
+                    used_ip: row.try_get("used_ip")?,
+                })
+            }
+            None => None,
+        };
 
         match db_token {
             Some(db_token) => {
@@ -407,14 +428,14 @@ impl TokenManager {
     async fn mark_token_used_in_db(&self, tenant: &TenantContext, token_data: &TokenData) -> Result<()> {
         let pool = self.db.get_tenant_pool(tenant).await?;
 
-        sqlx::query!(
-            "UPDATE verification_tokens SET used = $1, used_at = $2, used_ip = $3 WHERE token = $4 AND tenant_id = $5",
-            token_data.used,
-            token_data.used_at,
-            token_data.used_ip,
-            token_data.token,
-            tenant.tenant_id.0
+        sqlx::query(
+            "UPDATE verification_tokens SET used = $1, used_at = $2, used_ip = $3 WHERE token = $4 AND tenant_id = $5"
         )
+        .bind(token_data.used)
+        .bind(token_data.used_at)
+        .bind(&token_data.used_ip)
+        .bind(&token_data.token)
+        .bind(tenant.tenant_id.0)
         .execute(pool.get())
         .await?;
 

@@ -99,7 +99,7 @@ impl CustomerService for DefaultCustomerService {
         Ok(customer)
     }
 
-    async fn update_customer(&self, id: Uuid, mut request: UpdateCustomerRequest, modified_by: Uuid) -> Result<Customer> {
+    async fn update_customer(&self, id: Uuid, request: UpdateCustomerRequest, modified_by: Uuid) -> Result<Customer> {
         // 1. Input validation
         request.validate()
             .map_err(|e| MasterDataError::ValidationError {
@@ -264,6 +264,9 @@ impl CustomerService for DefaultCustomerService {
             CustomerType::B2b => "B2B",
             CustomerType::B2c => "B2C",
             CustomerType::B2g => "B2G",
+            CustomerType::Business => "BUS",
+            CustomerType::Individual => "IND",
+            CustomerType::Government => "GOV",
             CustomerType::Internal => "INT",
             CustomerType::Reseller => "RSL",
             CustomerType::Distributor => "DST",
@@ -356,14 +359,17 @@ impl DefaultCustomerService {
         use CustomerLifecycleStage::*;
 
         let valid_transitions = match current {
-            Lead => vec![Prospect, FormerCustomer],
-            Prospect => vec![NewCustomer, FormerCustomer],
-            NewCustomer => vec![ActiveCustomer, InactiveCustomer, FormerCustomer],
-            ActiveCustomer => vec![VipCustomer, AtRiskCustomer, InactiveCustomer, FormerCustomer],
-            VipCustomer => vec![ActiveCustomer, AtRiskCustomer, InactiveCustomer, FormerCustomer],
-            AtRiskCustomer => vec![ActiveCustomer, WonBackCustomer, InactiveCustomer, FormerCustomer],
-            InactiveCustomer => vec![WonBackCustomer, FormerCustomer],
-            WonBackCustomer => vec![ActiveCustomer, VipCustomer, AtRiskCustomer, InactiveCustomer, FormerCustomer],
+            Lead => vec![Prospect, ProspectCustomer, FormerCustomer],
+            Prospect => vec![NewCustomer, ProspectCustomer, FormerCustomer],
+            ProspectCustomer => vec![NewCustomer, ActiveCustomer, Active, FormerCustomer],
+            NewCustomer => vec![ActiveCustomer, Active, InactiveCustomer, FormerCustomer],
+            Active => vec![ActiveCustomer, VipCustomer, AtRiskCustomer, InactiveCustomer, Churned, FormerCustomer],
+            ActiveCustomer => vec![Active, VipCustomer, AtRiskCustomer, InactiveCustomer, Churned, FormerCustomer],
+            VipCustomer => vec![ActiveCustomer, Active, AtRiskCustomer, InactiveCustomer, Churned, FormerCustomer],
+            AtRiskCustomer => vec![ActiveCustomer, Active, WonBackCustomer, InactiveCustomer, Churned, FormerCustomer],
+            InactiveCustomer => vec![WonBackCustomer, Churned, FormerCustomer],
+            Churned => vec![WonBackCustomer, FormerCustomer],
+            WonBackCustomer => vec![ActiveCustomer, Active, VipCustomer, AtRiskCustomer, InactiveCustomer, FormerCustomer],
             FormerCustomer => vec![WonBackCustomer], // Only allow win-back
         };
 

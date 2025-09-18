@@ -484,17 +484,21 @@ impl CustomerAggregate {
         use CustomerLifecycleStage::*;
 
         let valid_transitions = match current {
-            Lead => vec![Prospect, FormerCustomer],
-            Prospect => vec![NewCustomer, FormerCustomer],
-            NewCustomer => vec![ActiveCustomer, InactiveCustomer, FormerCustomer],
-            ActiveCustomer => vec![VipCustomer, AtRiskCustomer, InactiveCustomer, FormerCustomer],
-            VipCustomer => vec![ActiveCustomer, AtRiskCustomer, InactiveCustomer, FormerCustomer],
+            Lead => vec![Prospect, ProspectCustomer, FormerCustomer],
+            Prospect => vec![NewCustomer, ProspectCustomer, FormerCustomer],
+            ProspectCustomer => vec![NewCustomer, ActiveCustomer, Active, FormerCustomer],
+            NewCustomer => vec![ActiveCustomer, Active, InactiveCustomer, FormerCustomer],
+            Active => vec![ActiveCustomer, VipCustomer, AtRiskCustomer, InactiveCustomer, Churned, FormerCustomer],
+            ActiveCustomer => vec![Active, VipCustomer, AtRiskCustomer, InactiveCustomer, Churned, FormerCustomer],
+            VipCustomer => vec![ActiveCustomer, Active, AtRiskCustomer, InactiveCustomer, Churned, FormerCustomer],
             AtRiskCustomer => {
-                vec![ActiveCustomer, WonBackCustomer, InactiveCustomer, FormerCustomer]
+                vec![ActiveCustomer, Active, WonBackCustomer, InactiveCustomer, Churned, FormerCustomer]
             }
-            InactiveCustomer => vec![WonBackCustomer, FormerCustomer],
+            InactiveCustomer => vec![WonBackCustomer, Churned, FormerCustomer],
+            Churned => vec![WonBackCustomer, FormerCustomer],
             WonBackCustomer => vec![
                 ActiveCustomer,
+                Active,
                 VipCustomer,
                 AtRiskCustomer,
                 InactiveCustomer,

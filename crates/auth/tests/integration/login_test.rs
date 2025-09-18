@@ -172,9 +172,9 @@ async fn test_token_refresh() {
 
         assert!(refresh_result.is_ok(), "Token refresh should succeed");
         
-        let new_access_token = refresh_result.unwrap();
-        assert!(!new_access_token.is_empty(), "New access token should not be empty");
-        assert_ne!(new_access_token, login_response.access_token, "New token should be different");
+        let new_token_pair = refresh_result.unwrap();
+        assert!(!new_token_pair.access_token.is_empty(), "New access token should not be empty");
+        assert_ne!(new_token_pair.access_token, login_response.access_token, "New token should be different");
     }
 
     ctx.cleanup().await;

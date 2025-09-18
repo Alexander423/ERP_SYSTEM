@@ -1,13 +1,14 @@
 -- Migration: Create verification_tokens table
--- This table stores verification tokens for email verification and password reset workflows
+-- This table stores verification tokens for email verification, password reset, user invites, and email change workflows
 -- Date: 2024-09-17
+-- Note: This will be created in each tenant schema, not public schema
 
--- Create verification_tokens table in public schema (will be created in each tenant schema)
+-- Create verification_tokens table (to be created in tenant schemas)
 CREATE TABLE IF NOT EXISTS verification_tokens (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     token VARCHAR(255) NOT NULL UNIQUE,
-    purpose VARCHAR(50) NOT NULL CHECK (purpose IN ('email_verification', 'password_reset', '2fa_backup')),
-    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    purpose VARCHAR(50) NOT NULL CHECK (purpose IN ('email_verification', 'password_reset', 'invite_user', 'change_email')),
+    user_id UUID,  -- Can be NULL for invite_user tokens
     tenant_id UUID NOT NULL,
     email VARCHAR(255),
     metadata JSONB DEFAULT '{}',
@@ -20,7 +21,11 @@ CREATE TABLE IF NOT EXISTS verification_tokens (
 
     -- Constraints
     CONSTRAINT verification_tokens_expires_after_created CHECK (expires_at > created_at),
-    CONSTRAINT verification_tokens_used_after_created CHECK (used_at IS NULL OR used_at >= created_at)
+    CONSTRAINT verification_tokens_used_after_created CHECK (used_at IS NULL OR used_at >= created_at),
+    CONSTRAINT verification_tokens_user_id_required CHECK (
+        (purpose IN ('email_verification', 'password_reset', 'change_email') AND user_id IS NOT NULL) OR
+        (purpose = 'invite_user')
+    )
 );
 
 -- Indexes for performance

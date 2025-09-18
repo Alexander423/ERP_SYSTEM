@@ -378,7 +378,7 @@ impl FieldEncryption for EncryptionService {
         Ok(decrypted_fields)
     }
 
-    async fn rotate_encryption_keys(&self, context: &EncryptionContext) -> Result<()> {
+    async fn rotate_encryption_keys(&self, _context: &EncryptionContext) -> Result<()> {
         // Clear the key derivation cache to force new key generation
         {
             let mut cache = self.key_derivation_cache.write().unwrap();
@@ -459,7 +459,7 @@ impl SensitiveFieldIdentifier {
 
     /// Determine encryption requirements based on compliance frameworks
     pub fn get_encryption_requirements(
-        field_name: &str,
+        _field_name: &str,
         data_classification: &DataClassification,
     ) -> EncryptionRequirement {
         match data_classification {

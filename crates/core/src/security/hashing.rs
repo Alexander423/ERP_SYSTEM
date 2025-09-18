@@ -4,6 +4,7 @@ use argon2::{
 };
 use crate::{config::SecurityConfig, error::Result, Error};
 
+#[derive(Clone)]
 pub struct PasswordHasher {
     argon2: Argon2<'static>,
 }

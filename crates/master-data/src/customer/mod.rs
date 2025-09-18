@@ -31,6 +31,7 @@ pub use event_store::{CustomerEventStore, PostgresCustomerEventStore, EventStati
 pub use aggregate::CustomerAggregate;
 pub use analytics_engine::{CustomerAnalyticsEngine, InMemoryAnalyticsEngine, CustomerInsights};
 pub use search::{CustomerSearchEngine, AdvancedSearchEngine, SearchOptions, SearchResults, AdvancedSearchFilters};
+pub use validation::CustomerValidator;
 
 #[cfg(feature = "axum")]
 pub use handlers::{

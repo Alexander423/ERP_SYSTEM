@@ -1,6 +1,6 @@
 # Enterprise ERP System
 
-A comprehensive, secure, and scalable ERP system built with Rust, focusing on multi-tenancy, security, and performance.
+An ERP system built with Rust, currently in development. Features a solid foundation with PostgreSQL database, multi-tenant architecture, and modular design.
 
 ## 🚀 Quick Start
 
@@ -9,17 +9,17 @@ A comprehensive, secure, and scalable ERP system built with Rust, focusing on mu
 git clone <repository-url>
 cd ERP
 
-# Setup environment
-cp .env.example .env
-# Edit .env with your database configuration
+# Setup environment variables
+# Set DATABASE_URL, REDIS_URL, JWT_SECRET, etc.
 
 # Run database migrations
-cargo sqlx migrate run
+DATABASE_URL="your-postgres-url" cargo sqlx migrate run
 
-# Build and run
-cargo build --release
-cargo run --bin erp-server
+# Build and run the API server
+DATABASE_URL="your-postgres-url" cargo run -p erp-api --bin erp-server
 ```
+
+**⚠️ Note:** This system is currently in development. See [PROJECT_STATUS.md](PROJECT_STATUS.md) for current implementation status.
 
 ## 📚 Documentation
 
@@ -35,8 +35,8 @@ cargo run --bin erp-server
 - **[Deployment Guide](docs/deployment/DEPLOYMENT_GUIDE.md)** - Production deployment instructions
 
 ### Project Information
-- **[Project Status](docs/project/PROJECT_STATUS.md)** - Current development status
-- **[Implementation Summary](docs/project/COMPREHENSIVE_IMPLEMENTATION_SUMMARY.md)** - Detailed implementation overview
+- **[Project Status](PROJECT_STATUS.md)** - Accurate current development status
+- **[Legacy Documentation](docs/project/)** - Historical implementation docs (may contain outdated info)
 
 ### Localization
 - **[Deutsche Dokumentation](docs/localization/DEUTSCHE_DOKUMENTATION.md)** - German documentation
@@ -50,19 +50,23 @@ cargo run --bin erp-server
 
 ## 🏗️ System Features
 
-### Core Capabilities
-- **Multi-tenant Architecture** - Complete tenant isolation
-- **Customer Management** - Comprehensive customer lifecycle management
-- **Security Framework** - Enterprise-grade security with encryption
-- **Analytics Engine** - Real-time customer analytics and insights
-- **Event Sourcing** - Complete audit trail with event replay capabilities
+### ✅ Currently Implemented
+- **Modular Architecture** - Clean separation of concerns with Rust crates
+- **Database Layer** - PostgreSQL with migrations and repository pattern
+- **API Framework** - Axum-based HTTP server with middleware
+- **Configuration System** - Environment-based configuration management
+- **Basic Authentication** - User management and JWT token handling
 
-### Technical Highlights
-- **Rust Performance** - Memory-safe, high-performance backend
-- **PostgreSQL** - Robust data persistence with ACID compliance
-- **Real-time Analytics** - Customer insights and behavioral analysis
-- **GDPR/SOX Compliance** - Built-in compliance frameworks
-- **Docker Ready** - Containerized deployment support
+### 🚧 In Development
+- **Customer Management** - Repository layer implemented, API integration ongoing
+- **Multi-tenant Support** - Database schema ready, context handling in progress
+- **Security Middleware** - Basic security headers, auth middleware being refined
+
+### 📋 Planned Features
+- **Analytics Engine** - Customer insights and reporting
+- **Event Sourcing** - Audit trail and event replay
+- **Advanced Security** - Field-level encryption, compliance features
+- **Frontend Interface** - Web UI for system management
 
 ## 🛠️ Development
 
@@ -86,29 +90,45 @@ cargo run --bin erp-server
 
 ### Running Tests
 ```bash
-# Run all tests
-cargo test
+# Set up test environment first
+# Copy .env.test and configure test database
 
 # Run specific crate tests
-cargo test -p erp-core
-cargo test -p erp-auth
-cargo test -p erp-master-data
+DATABASE_URL="your-test-db-url" cargo test -p erp-core
+DATABASE_URL="your-test-db-url" cargo test -p erp-auth
+DATABASE_URL="your-test-db-url" cargo test -p erp-master-data
+
+# Note: Integration tests require proper database setup
 ```
 
-## 📊 Performance
+## 📊 Current Development Status
 
-- **< 10ms** average response time for core operations
-- **100+** concurrent users supported
-- **Enterprise-grade** security and compliance
-- **Zero-downtime** deployment capabilities
+**🟡 Alpha Development Stage**
+
+- **Core Infrastructure** - ✅ Complete and functional
+- **API Layer** - 🟡 Basic implementation with mock responses
+- **Database Layer** - ✅ Repository pattern with proper SQL implementation
+- **Testing** - 🟡 Infrastructure working, coverage being expanded
+- **Documentation** - 🟡 Realistic status, legacy docs being updated
 
 ## 🔒 Security
 
-- Field-level encryption (AES-256)
+### ✅ Currently Implemented
+- Configuration validation and security checks
+- JWT token-based authentication framework
+- Password hashing with Argon2
+- Basic security headers middleware
+
+### 🚧 In Development
 - Role-based access control (RBAC)
+- Session management
+- Input validation and sanitization
+
+### 📋 Planned
+- Field-level encryption (AES-256)
 - Comprehensive audit logging
-- Multi-factor authentication support
-- GDPR, SOX, HIPAA compliance ready
+- Multi-factor authentication
+- Compliance frameworks (GDPR, SOX)
 
 ## 🤝 Contributing
 

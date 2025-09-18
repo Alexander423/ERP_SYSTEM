@@ -163,7 +163,27 @@
       "Bash(timeout 5 cargo run --bin erp-server -- --help)",
       "Bash(timeout 5 cargo run -p erp-api --bin erp-server -- --help)",
       "Bash(awk:*)",
-      "Bash(SQLX_OFFLINE=true timeout 30s cargo check --message-format=short --package erp-core --package erp-auth)"
+      "Bash(SQLX_OFFLINE=true timeout 30s cargo check --message-format=short --package erp-core --package erp-auth)",
+      "Bash(SQLX_OFFLINE=true timeout 15s cargo check -p erp-api --message-format=short)",
+      "Bash(DATABASE_URL=\"postgresql://erp_admin:erp_secure_password_change_in_production@localhost:5432/erp_main\" timeout 30s cargo check -p erp-api --message-format=short)",
+      "Bash(DATABASE_URL=\"postgresql://erp_admin:erp_secure_password_change_in_production@localhost:5432/erp_main\" timeout 20s cargo check -p erp-auth --message-format=short)",
+      "Bash(DATABASE_URL=\"postgresql://erp_admin:erp_secure_password_change_in_production@localhost:5432/erp_main\" timeout 30s cargo check --all --message-format=short)",
+      "Bash(echo:*)",
+      "Bash(echo \"ENVIRONMENT: $ENVIRONMENT:-not_set\")",
+      "Bash(PGPASSWORD=erp_secure_password_change_in_production psql -h localhost -U erp_admin -d postgres -f scripts/setup_test_db.sql)",
+      "Bash(DATABASE_URL=\"postgresql://erp_admin:erp_secure_password_change_in_production@localhost:5432/erp_main\" timeout 30s cargo test -p erp-auth test_successful_login)",
+      "Bash(DATABASE_URL=\"postgresql://erp_admin:erp_secure_password_change_in_production@localhost:5432/erp_main\" cargo test -p erp-auth test_successful_login --message-format=short)",
+      "Bash(DATABASE_URL=\"postgresql://erp_admin:erp_secure_password_change_in_production@localhost:5432/erp_main\" timeout 5s cargo run -p erp-api --bin erp-server -- --help)",
+      "Bash(DATABASE_URL=\"postgresql://erp_admin:erp_secure_password_change_in_production@localhost:5432/erp_main\" timeout 120 cargo build -p erp-api --release)",
+      "Bash(DATABASE_URL=\"postgresql://erp_admin:erp_secure_password_change_in_production@localhost:5432/erp_main\" cargo check --all --message-format=json)",
+      "Bash(DATABASE_URL=\"postgresql://erp_admin:erp_secure_password_change_in_production@localhost:5432/erp_main\" timeout 30s cargo check -p erp-master-data --tests --message-format=short)",
+      "Bash(SQLX_OFFLINE=true timeout 30s cargo check -p erp-master-data --tests --message-format=short)",
+      "Bash(SQLX_OFFLINE=true timeout 15s cargo check --all --message-format=short)",
+      "Bash(SQLX_OFFLINE=true timeout 10s cargo check -p erp-core --message-format=short)",
+      "Bash(SQLX_OFFLINE=true timeout 30s cargo test -p erp-master-data --lib --message-format=short)",
+      "Bash(SQLX_OFFLINE=true cargo check -p erp-master-data --tests --message-format=short)",
+      "Bash(SQLX_OFFLINE=true timeout 30s cargo check -p erp-master-data --lib --message-format=short)",
+      "Bash(SQLX_OFFLINE=true cargo check --all --lib --message-format=short)"
     ],
     "deny": []
   }

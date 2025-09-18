@@ -94,6 +94,9 @@ pub enum CustomerType {
     B2b,        // Business to Business
     B2c,        // Business to Consumer
     B2g,        // Business to Government
+    Business,   // Generic business customer
+    Individual, // Individual person
+    Government, // Government entity
     Internal,   // Internal company/department
     Reseller,   // Channel partner
     Distributor,
@@ -106,11 +109,14 @@ pub enum CustomerType {
 pub enum CustomerLifecycleStage {
     Lead,
     Prospect,
+    ProspectCustomer, // Alternative prospect variant
     NewCustomer,
+    Active,           // Alternative for ActiveCustomer
     ActiveCustomer,
     VipCustomer,
     AtRiskCustomer,
     InactiveCustomer,
+    Churned,          // Churned customer variant
     WonBackCustomer,
     FormerCustomer,
 }
@@ -289,6 +295,8 @@ pub struct CreateCustomerRequest {
     // Hierarchy
     pub parent_customer_id: Option<Uuid>,
     pub corporate_group_id: Option<Uuid>,
+    pub customer_hierarchy_level: Option<u8>,
+    pub consolidation_group: Option<String>,
 
     // Status
     pub lifecycle_stage: Option<CustomerLifecycleStage>,
@@ -423,7 +431,7 @@ pub struct UpdateFinancialInfoRequest {
 }
 
 /// Customer search and filtering
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CustomerSearchCriteria {
     // Text search
     pub search_term: Option<String>, // Searches across name, number, email, etc.

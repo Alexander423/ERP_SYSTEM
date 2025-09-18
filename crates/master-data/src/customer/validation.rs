@@ -2,7 +2,6 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use uuid::Uuid;
-use validator::ValidationError;
 
 use crate::customer::model::*;
 use crate::error::{MasterDataError, Result};
@@ -560,9 +559,9 @@ impl DefaultCustomerValidationEngine {
 impl CustomerValidationEngine for DefaultCustomerValidationEngine {
     async fn validate_customer(&self, customer: &Customer, context: &ValidationContext) -> Result<ValidationReport> {
         let start_time = std::time::Instant::now();
-        let mut errors = vec![];
-        let mut warnings = vec![];
-        let mut suggestions = vec![];
+        let errors = vec![];
+        let warnings = vec![];
+        let suggestions = vec![];
 
         // Execute business rules
         let rule_result = self.execute_business_rules(&self.business_rules, customer).await?;
@@ -690,6 +689,143 @@ impl Default for DefaultCustomerValidationEngine {
     }
 }
 
+// Simple validation utilities
+use regex::Regex;
+use once_cell::sync::Lazy;
+
+static EMAIL_REGEX: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$").unwrap()
+});
+
+static PHONE_REGEX: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"^[\+]?[1-9]?[\d\s\-\(\)\.]{7,15}$").unwrap()
+});
+
+static CUSTOMER_NUMBER_REGEX: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"^[A-Z0-9\-_]{1,50}$").unwrap()
+});
+
+pub struct CustomerValidator;
+
+impl CustomerValidator {
+    pub fn new() -> Self {
+        Self
+    }
+
+    pub fn validate_customer_number(&self, customer_number: &str) -> Result<()> {
+        if customer_number.is_empty() {
+            return Err(MasterDataError::ValidationError {
+                field: "customer_number".to_string(),
+                message: "Customer number cannot be empty".to_string(),
+            });
+        }
+        if customer_number.len() > 50 {
+            return Err(MasterDataError::ValidationError {
+                field: "customer_number".to_string(),
+                message: "Customer number cannot exceed 50 characters".to_string(),
+            });
+        }
+        if !CUSTOMER_NUMBER_REGEX.is_match(customer_number) {
+            return Err(MasterDataError::ValidationError {
+                field: "customer_number".to_string(),
+                message: "Customer number contains invalid characters. Only alphanumeric characters, hyphens, and underscores are allowed".to_string(),
+            });
+        }
+        Ok(())
+    }
+
+    pub fn validate_email(&self, email: &str) -> Result<()> {
+        if email.is_empty() {
+            return Err(MasterDataError::ValidationError {
+                field: "email".to_string(),
+                message: "Email cannot be empty".to_string(),
+            });
+        }
+        if !EMAIL_REGEX.is_match(email) {
+            return Err(MasterDataError::ValidationError {
+                field: "email".to_string(),
+                message: "Invalid email format".to_string(),
+            });
+        }
+        Ok(())
+    }
+
+    pub fn validate_phone(&self, phone: &str) -> Result<()> {
+        if phone.is_empty() {
+            return Err(MasterDataError::ValidationError {
+                field: "phone".to_string(),
+                message: "Phone number cannot be empty".to_string(),
+            });
+        }
+        if !PHONE_REGEX.is_match(phone) {
+            return Err(MasterDataError::ValidationError {
+                field: "phone".to_string(),
+                message: "Invalid phone number format".to_string(),
+            });
+        }
+        Ok(())
+    }
+
+    pub fn validate_legal_name(&self, legal_name: &str) -> Result<()> {
+        if legal_name.trim().is_empty() {
+            return Err(MasterDataError::ValidationError {
+                field: "legal_name".to_string(),
+                message: "Legal name cannot be empty".to_string(),
+            });
+        }
+        if legal_name.len() > 255 {
+            return Err(MasterDataError::ValidationError {
+                field: "legal_name".to_string(),
+                message: "Legal name cannot exceed 255 characters".to_string(),
+            });
+        }
+        Ok(())
+    }
+
+    pub fn validate_tags(&self, tags: &[String]) -> Result<()> {
+        if tags.len() > 50 {
+            return Err(MasterDataError::ValidationError {
+                field: "tags".to_string(),
+                message: "Cannot have more than 50 tags".to_string(),
+            });
+        }
+
+        for tag in tags {
+            if tag.trim().is_empty() {
+                return Err(MasterDataError::ValidationError {
+                    field: "tags".to_string(),
+                    message: "Tag cannot be empty".to_string(),
+                });
+            }
+            if tag.len() > 50 {
+                return Err(MasterDataError::ValidationError {
+                    field: "tags".to_string(),
+                    message: "Tag cannot exceed 50 characters".to_string(),
+                });
+            }
+        }
+
+        // Check for duplicates
+        let mut unique_tags = std::collections::HashSet::new();
+        for tag in tags {
+            if !unique_tags.insert(tag.to_lowercase()) {
+                return Err(MasterDataError::ValidationError {
+                    field: "tags".to_string(),
+                    message: format!("Duplicate tag found: {}", tag),
+                });
+            }
+        }
+
+        Ok(())
+    }
+}
+
+impl Default for CustomerValidator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -718,21 +854,24 @@ mod tests {
 
         pub fn validate_customer_number(&self, customer_number: &str) -> Result<()> {
             if customer_number.is_empty() {
-                return Err(MasterDataError::ValidationError(
-                    "Customer number cannot be empty".to_string(),
-                ));
+                return Err(MasterDataError::ValidationError {
+                    field: "customer_number".to_string(),
+                    message: "Customer number cannot be empty".to_string(),
+                });
             }
 
             if customer_number.len() > 50 {
-                return Err(MasterDataError::ValidationError(
-                    "Customer number cannot exceed 50 characters".to_string(),
-                ));
+                return Err(MasterDataError::ValidationError {
+                    field: "customer_number".to_string(),
+                    message: "Customer number cannot exceed 50 characters".to_string(),
+                });
             }
 
             if !CUSTOMER_NUMBER_REGEX.is_match(customer_number) {
-                return Err(MasterDataError::ValidationError(
-                    "Customer number contains invalid characters. Only alphanumeric characters, hyphens, and underscores are allowed".to_string(),
-                ));
+                return Err(MasterDataError::ValidationError {
+                    field: "customer_number".to_string(),
+                    message: "Customer number contains invalid characters. Only alphanumeric characters, hyphens, and underscores are allowed".to_string(),
+                });
             }
 
             Ok(())
@@ -740,15 +879,17 @@ mod tests {
 
         pub fn validate_email(&self, email: &str) -> Result<()> {
             if email.is_empty() {
-                return Err(MasterDataError::ValidationError(
-                    "Email cannot be empty".to_string(),
-                ));
+                return Err(MasterDataError::ValidationError {
+                    field: "email".to_string(),
+                    message: "Email cannot be empty".to_string(),
+                });
             }
 
             if !EMAIL_REGEX.is_match(email) {
-                return Err(MasterDataError::ValidationError(
-                    "Invalid email format".to_string(),
-                ));
+                return Err(MasterDataError::ValidationError {
+                    field: "email".to_string(),
+                    message: "Invalid email format".to_string(),
+                });
             }
 
             Ok(())
@@ -756,15 +897,17 @@ mod tests {
 
         pub fn validate_phone(&self, phone: &str) -> Result<()> {
             if phone.is_empty() {
-                return Err(MasterDataError::ValidationError(
-                    "Phone number cannot be empty".to_string(),
-                ));
+                return Err(MasterDataError::ValidationError {
+                    field: "phone".to_string(),
+                    message: "Phone number cannot be empty".to_string(),
+                });
             }
 
             if !PHONE_REGEX.is_match(phone) {
-                return Err(MasterDataError::ValidationError(
-                    "Invalid phone number format".to_string(),
-                ));
+                return Err(MasterDataError::ValidationError {
+                    field: "phone".to_string(),
+                    message: "Invalid phone number format".to_string(),
+                });
             }
 
             Ok(())
@@ -772,21 +915,24 @@ mod tests {
 
         pub fn validate_legal_name(&self, legal_name: &str) -> Result<()> {
             if legal_name.is_empty() {
-                return Err(MasterDataError::ValidationError(
-                    "Legal name cannot be empty".to_string(),
-                ));
+                return Err(MasterDataError::ValidationError {
+                    field: "legal_name".to_string(),
+                    message: "Legal name cannot be empty".to_string(),
+                });
             }
 
             if legal_name.len() > 255 {
-                return Err(MasterDataError::ValidationError(
-                    "Legal name cannot exceed 255 characters".to_string(),
-                ));
+                return Err(MasterDataError::ValidationError {
+                    field: "legal_name".to_string(),
+                    message: "Legal name cannot exceed 255 characters".to_string(),
+                });
             }
 
             if legal_name.trim().is_empty() {
-                return Err(MasterDataError::ValidationError(
-                    "Legal name cannot be only whitespace".to_string(),
-                ));
+                return Err(MasterDataError::ValidationError {
+                    field: "legal_name".to_string(),
+                    message: "Legal name cannot be only whitespace".to_string(),
+                });
             }
 
             Ok(())
@@ -794,28 +940,32 @@ mod tests {
 
         pub fn validate_tags(&self, tags: &[String]) -> Result<()> {
             if tags.len() > 50 {
-                return Err(MasterDataError::ValidationError(
-                    "Cannot have more than 50 tags".to_string(),
-                ));
+                return Err(MasterDataError::ValidationError {
+                    field: "tags".to_string(),
+                    message: "Cannot have more than 50 tags".to_string(),
+                });
             }
 
             for tag in tags {
                 if tag.is_empty() {
-                    return Err(MasterDataError::ValidationError(
-                        "Tags cannot be empty".to_string(),
-                    ));
+                    return Err(MasterDataError::ValidationError {
+                        field: "tags".to_string(),
+                        message: "Tags cannot be empty".to_string(),
+                    });
                 }
 
                 if tag.len() > 100 {
-                    return Err(MasterDataError::ValidationError(
-                        "Individual tags cannot exceed 100 characters".to_string(),
-                    ));
+                    return Err(MasterDataError::ValidationError {
+                        field: "tags".to_string(),
+                        message: "Individual tags cannot exceed 100 characters".to_string(),
+                    });
                 }
 
                 if tag.trim() != tag {
-                    return Err(MasterDataError::ValidationError(
-                        "Tags cannot have leading or trailing whitespace".to_string(),
-                    ));
+                    return Err(MasterDataError::ValidationError {
+                        field: "tags".to_string(),
+                        message: "Tags cannot have leading or trailing whitespace".to_string(),
+                    });
                 }
             }
 
@@ -823,9 +973,10 @@ mod tests {
             let mut unique_tags = std::collections::HashSet::new();
             for tag in tags {
                 if !unique_tags.insert(tag.to_lowercase()) {
-                    return Err(MasterDataError::ValidationError(
-                        format!("Duplicate tag found: {}", tag),
-                    ));
+                    return Err(MasterDataError::ValidationError {
+                        field: "tags".to_string(),
+                        message: format!("Duplicate tag found: {}", tag),
+                    });
                 }
             }
 
@@ -995,6 +1146,8 @@ mod tests {
             customer_type: CustomerType::B2b,
             industry_classification: None,
             business_size: None,
+            customer_hierarchy_level: None,
+            consolidation_group: None,
             parent_customer_id: None,
             corporate_group_id: None,
             lifecycle_stage: Some(CustomerLifecycleStage::Lead),

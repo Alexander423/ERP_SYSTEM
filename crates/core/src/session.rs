@@ -390,7 +390,7 @@ impl SessionManager {
 
     /// Non-blocking scan for Redis keys matching a pattern
     async fn scan_keys(&self, conn: &mut redis::aio::ConnectionManager, pattern: &str) -> Result<Vec<String>> {
-        use redis::{AsyncCommands, Cmd};
+        use redis::Cmd;
 
         let mut cursor: u64 = 0;
         let mut keys = Vec::new();

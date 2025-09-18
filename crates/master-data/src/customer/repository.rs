@@ -192,6 +192,9 @@ impl PostgresCustomerRepository {
             CustomerType::B2b => "B",
             CustomerType::B2c => "C",
             CustomerType::B2g => "G",
+            CustomerType::Business => "BUS",
+            CustomerType::Individual => "IND",
+            CustomerType::Government => "GOV",
             CustomerType::Internal => "I",
             CustomerType::Reseller => "R",
             CustomerType::Distributor => "D",
@@ -343,7 +346,7 @@ impl CustomerRepository for PostgresCustomerRepository {
             INSERT INTO customers (
                 id, tenant_id, customer_number, legal_name, trade_names,
                 customer_type, industry_classification, business_size,
-                parent_customer_id, corporate_group_id,
+                parent_customer_id, corporate_group_id, customer_hierarchy_level, consolidation_group,
                 lifecycle_stage, status, credit_status,
                 tax_jurisdictions, tax_numbers,
                 currency_code, credit_limit, payment_terms, tax_exempt,
@@ -353,13 +356,13 @@ impl CustomerRepository for PostgresCustomerRepository {
             ) VALUES (
                 $1, $2, $3, $4, $5,
                 $6::customer_type, $7::industry_classification, $8::business_size,
-                $9, $10,
-                $11::customer_lifecycle_stage, $12::entity_status, $13::credit_status,
-                $14, $15,
-                $16, $17, $18, $19,
-                $20, $21, $22::acquisition_channel,
-                $23, $24::data_source, $25, $26,
-                $27, $28, $29, $30
+                $9, $10, $11, $12,
+                $13::customer_lifecycle_stage, $14::entity_status, $15::credit_status,
+                $16, $17,
+                $18, $19, $20, $21,
+                $22, $23, $24::acquisition_channel,
+                $25, $26::data_source, $27, $28,
+                $29, $30, $31, $32
             )
             "#,
         )
@@ -373,6 +376,8 @@ impl CustomerRepository for PostgresCustomerRepository {
         .bind(request.business_size.clone().unwrap_or(BusinessSize::Small))
         .bind(request.parent_customer_id)
         .bind(request.corporate_group_id)
+        .bind(request.customer_hierarchy_level.unwrap_or(1u8) as i16)
+        .bind(request.consolidation_group.clone())
         .bind(request.lifecycle_stage.clone().unwrap_or(CustomerLifecycleStage::Prospect))
         .bind(EntityStatus::Active as EntityStatus)
         .bind(CreditStatus::Good as CreditStatus)
@@ -443,7 +448,7 @@ impl CustomerRepository for PostgresCustomerRepository {
 
         query_parts.push(format!("WHERE id = ${} AND tenant_id = ${}", param_count + 1, param_count + 2));
 
-        let query = format!("{} {}", query_parts[0], query_parts[1..].join(", "));
+        let _query = format!("{} {}", query_parts[0], query_parts[1..].join(", "));
 
         // Execute update (simplified for now - full implementation would use dynamic query building)
         sqlx::query(

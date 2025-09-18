@@ -42,13 +42,11 @@ fn test_customer_validator_basic() {
 #[test]
 fn test_customer_creation() {
     let customer_id = Uuid::new_v4();
-    let tenant_id = TenantId(Uuid::new_v4());
     let user_id = Uuid::new_v4();
     let now = Utc::now();
 
     let customer = Customer {
         id: customer_id,
-        tenant_id,
         customer_number: "TEST-001".to_string(),
         external_ids: std::collections::HashMap::new(),
         legal_name: "Test Customer Ltd.".to_string(),
@@ -78,7 +76,13 @@ fn test_customer_creation() {
         financial_info: FinancialInfo {
             currency_code: "USD".to_string(),
             credit_limit: Some(rust_decimal::Decimal::new(100000, 2)),
-            payment_terms: Some("NET30".to_string()),
+            payment_terms: Some(PaymentTerms {
+                payment_method: PaymentMethod::BankTransfer,
+                net_days: Some(30),
+                discount_percentage: None,
+                discount_days: None,
+                late_fee_percentage: None,
+            }),
             tax_exempt: false,
             tax_numbers: std::collections::HashMap::new(),
         },
@@ -86,18 +90,31 @@ fn test_customer_creation() {
         discount_group_id: None,
         sales_representative_id: None,
         account_manager_id: None,
-        customer_segments: vec![CustomerSegment::Enterprise],
+        customer_segments: vec![CustomerSegment {
+            segment_type: "BUSINESS_SIZE".to_string(),
+            segment_value: "Enterprise".to_string(),
+            confidence_score: Some(0.95),
+            effective_date: now,
+            expiry_date: None,
+        }],
         acquisition_channel: Some(AcquisitionChannel::DirectSales),
-        customer_lifetime_value: Some(50000.0),
+        customer_lifetime_value: Some(rust_decimal::Decimal::new(50000, 0)),
         churn_probability: Some(0.1),
         performance_metrics: CustomerPerformanceMetrics {
-            total_revenue: Some(25000.0),
-            average_order_value: Some(2500.0),
+            total_revenue: Some(rust_decimal::Decimal::new(25000, 0)),
+            revenue_last_12_months: Some(25000.0),
+            average_order_value: Some(rust_decimal::Decimal::new(2500, 0)),
+            order_frequency: Some(0.83),
             total_orders: Some(10),
             last_order_date: Some(now),
+            profit_margin: Some(0.2),
+            last_purchase_date: Some(now),
+            first_purchase_date: Some(now),
+            customer_lifetime_value: Some(50000.0),
+            predicted_churn_probability: Some(0.1),
             relationship_duration_days: Some(365),
             satisfaction_score: Some(4.5),
-            net_promoter_score: Some(8.0),
+            net_promoter_score: Some(8),
             last_contact_date: Some(now),
             contact_frequency: Some(0.5),
             response_rate: Some(0.95),
@@ -110,8 +127,17 @@ fn test_customer_creation() {
             preferred_purchase_channels: vec!["online".to_string(), "phone".to_string()],
             seasonal_purchase_patterns: std::collections::HashMap::new(),
             product_category_preferences: std::collections::HashMap::new(),
+            purchase_frequency: Some(0.83),
+            preferred_categories: std::collections::HashMap::new(),
+            seasonal_trends: std::collections::HashMap::new(),
+            price_sensitivity: Some(0.3),
+            brand_loyalty: Some(0.8),
             preferred_contact_times: vec!["morning".to_string()],
             channel_engagement_rates: std::collections::HashMap::new(),
+            communication_preferences: std::collections::HashMap::new(),
+            support_ticket_frequency: Some(0.1),
+            product_return_rate: Some(0.02),
+            referral_activity: Some(0.15),
             website_engagement_score: Some(0.8),
             mobile_app_usage: Some(0.3),
             social_media_sentiment: Some(0.7),
@@ -124,9 +150,11 @@ fn test_customer_creation() {
             last_sync: Some(now),
             sync_source: Some("test".to_string()),
             sync_version: Some("1.0".to_string()),
-            sync_status: SyncStatus::Synced,
+            sync_status: SyncStatus::Success,
             external_references: std::collections::HashMap::new(),
         },
+        contract_ids: Vec::new(),
+        custom_fields: std::collections::HashMap::new(),
         audit: AuditFields {
             created_at: now,
             created_by: user_id,
@@ -141,7 +169,6 @@ fn test_customer_creation() {
 
     // Basic assertions
     assert_eq!(customer.id, customer_id);
-    assert_eq!(customer.tenant_id, tenant_id);
     assert_eq!(customer.legal_name, "Test Customer Ltd.");
     assert_eq!(customer.customer_type, CustomerType::B2b);
     assert_eq!(customer.lifecycle_stage, CustomerLifecycleStage::Lead);
@@ -152,35 +179,78 @@ fn test_customer_creation() {
 
 #[test]
 fn test_address_creation() {
+    let address_id = Uuid::new_v4();
+    let entity_id = Uuid::new_v4();
+    let user_id = Uuid::new_v4();
+    let now = Utc::now();
+
     let address = Address {
+        id: address_id,
+        entity_type: "customer".to_string(),
+        entity_id,
         address_type: AddressType::Billing,
-        street1: "123 Main Street".to_string(),
-        street2: Some("Suite 456".to_string()),
+        street_line_1: "123 Main Street".to_string(),
+        street_line_2: Some("Suite 456".to_string()),
         city: "New York".to_string(),
         state_province: Some("NY".to_string()),
         postal_code: "10001".to_string(),
-        country: "US".to_string(),
+        country_code: "US".to_string(),
+        coordinates: None,
         is_primary: true,
+        is_active: true,
+        audit: AuditFields {
+            created_at: now,
+            created_by: user_id,
+            modified_at: now,
+            modified_by: user_id,
+            version: 1,
+            is_deleted: false,
+            deleted_at: None,
+            deleted_by: None,
+        },
     };
 
     assert_eq!(address.address_type, AddressType::Billing);
-    assert_eq!(address.street1, "123 Main Street");
+    assert_eq!(address.street_line_1, "123 Main Street");
     assert_eq!(address.city, "New York");
-    assert_eq!(address.country, "US");
+    assert_eq!(address.country_code, "US");
     assert!(address.is_primary);
 }
 
 #[test]
 fn test_contact_creation() {
-    let contact = Contact {
+    let contact_id = Uuid::new_v4();
+    let entity_id = Uuid::new_v4();
+    let user_id = Uuid::new_v4();
+    let now = Utc::now();
+
+    let contact = ContactInfo {
+        id: contact_id,
+        entity_type: "customer".to_string(),
+        entity_id,
         contact_type: ContactType::Primary,
         first_name: "John".to_string(),
         last_name: "Doe".to_string(),
+        title: Some("CEO".to_string()),
+        department: Some("Executive".to_string()),
         email: Some("john.doe@example.com".to_string()),
         phone: Some("+1-555-123-4567".to_string()),
-        position: Some("CEO".to_string()),
-        department: Some("Executive".to_string()),
+        mobile: None,
+        fax: None,
+        preferred_language: None,
+        communication_preferences: None,
         is_primary: true,
+        is_active: true,
+        audit: AuditFields {
+            created_at: now,
+            created_by: user_id,
+            modified_at: now,
+            modified_by: user_id,
+            version: 1,
+            is_deleted: false,
+            deleted_at: None,
+            deleted_by: None,
+        },
     };
 
     assert_eq!(contact.contact_type, ContactType::Primary);
@@ -213,28 +283,41 @@ fn test_financial_info() {
     let financial_info = FinancialInfo {
         currency_code: "USD".to_string(),
         credit_limit: Some(rust_decimal::Decimal::new(50000, 2)),
-        payment_terms: Some("NET30".to_string()),
+        payment_terms: Some(PaymentTerms {
+            payment_method: PaymentMethod::BankTransfer,
+            net_days: Some(30),
+            discount_percentage: None,
+            discount_days: None,
+            late_fee_percentage: None,
+        }),
         tax_exempt: false,
         tax_numbers: std::collections::HashMap::new(),
     };
 
     assert_eq!(financial_info.currency_code, "USD");
     assert_eq!(financial_info.credit_limit, Some(rust_decimal::Decimal::new(50000, 2)));
-    assert_eq!(financial_info.payment_terms.as_deref(), Some("NET30"));
-    assert!(!financial_info.tax_exempt);
+    assert_eq!(financial_info.payment_terms.as_ref().map(|pt| &pt.payment_method), Some(&PaymentMethod::BankTransfer));
+    assert_eq!(financial_info.tax_exempt, false);
 }
 
 #[test]
 fn test_performance_metrics() {
     let now = Utc::now();
     let metrics = CustomerPerformanceMetrics {
-        total_revenue: Some(100000.0),
-        average_order_value: Some(5000.0),
+        total_revenue: Some(rust_decimal::Decimal::new(100000, 0)),
+        revenue_last_12_months: Some(100000.0),
+        average_order_value: Some(rust_decimal::Decimal::new(5000, 0)),
+        order_frequency: Some(0.27), // ~20 orders per 730 days
         total_orders: Some(20),
         last_order_date: Some(now),
+        profit_margin: Some(0.25),
+        last_purchase_date: Some(now),
+        first_purchase_date: Some(now),
+        customer_lifetime_value: Some(150000.0),
+        predicted_churn_probability: Some(0.05),
         relationship_duration_days: Some(730),
         satisfaction_score: Some(4.8),
-        net_promoter_score: Some(9.0),
+        net_promoter_score: Some(9),
         last_contact_date: Some(now),
         contact_frequency: Some(0.25),
         response_rate: Some(0.98),
@@ -244,7 +327,7 @@ fn test_performance_metrics() {
         last_calculated: now,
     };
 
-    assert_eq!(metrics.total_revenue, Some(100000.0));
+    assert_eq!(metrics.total_revenue, Some(rust_decimal::Decimal::new(100000, 0)));
     assert_eq!(metrics.total_orders, Some(20));
     assert_eq!(metrics.satisfaction_score, Some(4.8));
     assert!(metrics.payment_reliability_score.unwrap() > 0.95);
@@ -255,22 +338,31 @@ fn test_create_customer_request() {
     let request = CreateCustomerRequest {
         customer_number: Some("NEW-001".to_string()),
         legal_name: "New Customer Inc.".to_string(),
-        display_name: Some("New Customer".to_string()),
+        trade_names: Some(vec!["New Customer".to_string()]),
         customer_type: CustomerType::B2b,
-        lifecycle_stage: CustomerLifecycleStage::Lead,
-        addresses: vec![],
-        contacts: vec![],
-        tax_numbers: vec![],
-        notes: Some("Test customer creation".to_string()),
-        tags: vec!["test".to_string(), "new".to_string()],
-        custom_fields: std::collections::HashMap::new(),
+        industry_classification: Some(IndustryClassification::Technology),
+        business_size: Some(BusinessSize::Medium),
+        parent_customer_id: None,
+        corporate_group_id: None,
+        lifecycle_stage: Some(CustomerLifecycleStage::Lead),
+        status: Some(EntityStatus::Active),
+        credit_status: Some(CreditStatus::Good),
+        addresses: None,
+        contacts: None,
+        tax_jurisdictions: None,
+        tax_numbers: None,
         financial_info: None,
-        metadata: std::collections::HashMap::new(),
+        sales_representative_id: None,
+        account_manager_id: None,
+        acquisition_channel: None,
+        external_ids: None,
+        sync_info: None,
+        customer_hierarchy_level: None,
+        consolidation_group: None,
     };
 
     assert_eq!(request.customer_number.as_deref(), Some("NEW-001"));
     assert_eq!(request.legal_name, "New Customer Inc.");
     assert_eq!(request.customer_type, CustomerType::B2b);
-    assert_eq!(request.lifecycle_stage, CustomerLifecycleStage::Lead);
-    assert!(request.tags.contains(&"test".to_string()));
+    assert_eq!(request.lifecycle_stage, Some(CustomerLifecycleStage::Lead));
 }

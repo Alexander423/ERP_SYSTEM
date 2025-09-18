@@ -75,7 +75,7 @@ mod api_middleware;
 mod state;
 
 use crate::{
-    handlers::{auth, users, roles},
+    handlers::{auth, users, roles, customers},
     state::AppState
 };
 
@@ -180,6 +180,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::load()?;
     info!("Configuration loaded successfully");
 
+    // Validate configuration security
+    validate_configuration(&config)?;
+    info!("Configuration validation passed");
+
     // Initialize database
     let db = DatabasePool::new(config.database.clone()).await?;
     info!("Database pool initialized");
@@ -256,6 +260,8 @@ fn create_app(state: AppState, _auth_service: Arc<AuthService>) -> Result<Router
                 .layer(axum::middleware::from_fn(api_middleware::security_headers::security_headers_middleware))
                 // Request ID middleware
                 .layer(axum::middleware::from_fn(api_middleware::request_id::request_id_middleware))
+                // Tenant context extraction
+                .layer(axum::middleware::from_fn(api_middleware::tenant_context::tenant_context_middleware))
                 // Logging and tracing
                 .layer(
                     TraceLayer::new_for_http()
@@ -281,6 +287,7 @@ fn create_api_routes() -> Router<AppState> {
         .nest("/auth", auth::auth_routes())
         .nest("/users", users::user_routes())
         .nest("/roles", roles::role_routes())
+        .nest("/customers", customers::customer_routes())
 }
 
 async fn handler_404() -> impl IntoResponse {
@@ -309,13 +316,124 @@ async fn init_redis(url: &str) -> Result<ConnectionManager, redis::RedisError> {
 
 async fn run_migrations(db: &DatabasePool) -> Result<(), sqlx::Error> {
     info!("Running database migrations...");
-    
-    // Run public schema migrations
-    sqlx::query(include_str!("../../../migrations/001_public_schema.sql"))
-        .execute(&db.main_pool)
-        .await?;
-    
+
+    // Use sqlx migrator to run all migrations in proper order
+    let migrator = sqlx::migrate!("../../migrations");
+    migrator.run(&db.main_pool).await?;
+
     info!("Migrations completed successfully");
+    Ok(())
+}
+
+/// Validate configuration to ensure secure defaults are not used in production
+fn validate_configuration(config: &Config) -> Result<(), Box<dyn std::error::Error>> {
+
+    const DEFAULT_SECRETS: &[&str] = &[
+        "your-super-secret-jwt-key-change-in-production-min-32-chars",
+        "your-32-char-encryption-key-here!",
+        "change_me_in_production",
+        "placeholder",
+        "default",
+        "secret",
+    ];
+
+    const DEFAULT_PASSWORDS: &[&str] = &[
+        "erp_secure_password_change_in_production",
+        "redis_secure_password_change_in_production",
+        "your-app-password",
+        "password123",
+        "admin",
+    ];
+
+    let mut errors = Vec::new();
+
+    // Check environment
+    let is_production = std::env::var("ENVIRONMENT")
+        .unwrap_or_else(|_| "development".to_string())
+        .to_lowercase() == "production";
+
+    // JWT Secret validation
+    if config.jwt.secret.len() < 32 {
+        errors.push("JWT secret must be at least 32 characters long".to_string());
+    }
+
+    if DEFAULT_SECRETS.iter().any(|&s| config.jwt.secret.contains(s)) {
+        errors.push("JWT secret contains default/insecure value".to_string());
+    }
+
+    // AES Encryption Key validation
+    if config.security.aes_encryption_key.len() != 32 {
+        errors.push("AES encryption key must be exactly 32 characters long".to_string());
+    }
+
+    if DEFAULT_SECRETS.iter().any(|&s| config.security.aes_encryption_key.contains(s)) {
+        errors.push("AES encryption key contains default/insecure value".to_string());
+    }
+
+    // Database password validation (if extractable from URL)
+    if let Some(password_start) = config.database.url.find(':') {
+        if let Some(password_section) = config.database.url.get(password_start + 1..) {
+            if let Some(at_sign) = password_section.find('@') {
+                let password_part = &password_section[..at_sign];
+                if let Some(colon) = password_part.rfind(':') {
+                    let password = &password_part[colon + 1..];
+                    if DEFAULT_PASSWORDS.iter().any(|&p| password == p) {
+                        errors.push("Database password contains default/insecure value".to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    // Redis password validation (if extractable from URL)
+    if config.redis.url.contains("redis_secure_password_change_in_production") {
+        errors.push("Redis password contains default/insecure value".to_string());
+    }
+
+    // Production-specific validations
+    if is_production {
+        // CORS validation
+        if config.cors.allowed_origins.contains(&"*".to_string()) {
+            errors.push("CORS allowed origins contains wildcard (*) in production".to_string());
+        }
+
+        // Email provider validation
+        if config.email.provider == "mock" {
+            errors.push("Email provider is set to 'mock' in production".to_string());
+        }
+
+        // Debug mode validation
+        if std::env::var("DEBUG_MODE").unwrap_or_default() == "true" {
+            errors.push("DEBUG_MODE is enabled in production".to_string());
+        }
+
+        // Token expiry validation
+        if config.jwt.access_token_expiry > 3600 {
+            errors.push("JWT access token expiry is too long for production (should be ≤ 1 hour)".to_string());
+        }
+    }
+
+    // If there are errors, report them
+    if !errors.is_empty() {
+        eprintln!("\n⚠️  CONFIGURATION SECURITY ISSUES DETECTED ⚠️");
+        eprintln!("================================================");
+        for (i, error) in errors.iter().enumerate() {
+            eprintln!("{}. {}", i + 1, error);
+        }
+        eprintln!("================================================");
+
+        if is_production {
+            eprintln!("\n🛑 REFUSING TO START IN PRODUCTION WITH SECURITY ISSUES");
+            eprintln!("Please fix the above issues before deploying to production.\n");
+            return Err("Configuration validation failed: security issues detected".into());
+        } else {
+            eprintln!("\n⚠️  WARNING: Running with insecure configuration in development mode");
+            eprintln!("These issues MUST be fixed before deploying to production.\n");
+        }
+    } else {
+        info!("✅ Configuration security validation passed");
+    }
+
     Ok(())
 }
 

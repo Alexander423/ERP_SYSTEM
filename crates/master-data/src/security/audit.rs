@@ -10,7 +10,7 @@ use sqlx::Row;
 use std::collections::HashMap;
 use uuid::Uuid;
 
-use crate::error::{MasterDataError, Result};
+use crate::error::Result;
 
 /// Audit logging service for security and compliance
 #[async_trait]
@@ -585,7 +585,7 @@ impl AuditLogger for SecurityAuditService {
         self.log_security_event(&audit_event).await
     }
 
-    async fn query_audit_trail(&self, query: &AuditQuery) -> Result<AuditTrail> {
+    async fn query_audit_trail(&self, _query: &AuditQuery) -> Result<AuditTrail> {
         // This would implement complex audit trail querying
         // For now, return empty results
         Ok(AuditTrail {
@@ -632,7 +632,7 @@ impl AuditLogger for SecurityAuditService {
         })
     }
 
-    async fn detect_anomalies(&self, context: &AnomalyDetectionContext) -> Result<Vec<SecurityAnomaly>> {
+    async fn detect_anomalies(&self, _context: &AnomalyDetectionContext) -> Result<Vec<SecurityAnomaly>> {
         if !self.anomaly_detection_enabled {
             return Ok(vec![]);
         }
@@ -642,7 +642,7 @@ impl AuditLogger for SecurityAuditService {
         Ok(vec![])
     }
 
-    async fn archive_logs(&self, retention_policy: &RetentionPolicy) -> Result<u64> {
+    async fn archive_logs(&self, _retention_policy: &RetentionPolicy) -> Result<u64> {
         let archived_count = sqlx::query(
             "SELECT cleanup_old_audit_logs() as count"
         )
@@ -659,8 +659,8 @@ impl AuditLogger for SecurityAuditService {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_risk_score_calculation() {
+    #[tokio::test]
+    async fn test_risk_score_calculation() {
         let service = SecurityAuditService::new(sqlx::Pool::connect("").await.unwrap());
 
         let event = AuditEvent {
@@ -688,8 +688,8 @@ mod tests {
         assert!(risk_score > 8.0); // High risk event
     }
 
-    #[test]
-    fn test_retention_period_calculation() {
+    #[tokio::test]
+    async fn test_retention_period_calculation() {
         let service = SecurityAuditService::new(sqlx::Pool::connect("").await.unwrap());
 
         let critical_event = AuditEvent {

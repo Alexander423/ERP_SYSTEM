@@ -7,18 +7,7 @@ members = [
 ]
 resolver = "2"
 
-[package]
-name = "schema-fix"
-version = "0.1.0"
-edition = "2021"
-
-[[bin]]
-name = "apply-schema"
-path = "src/apply_schema.rs"
-
-[dependencies]
-sqlx = { workspace = true }
-tokio = { workspace = true }
+# Workspace root - no package here, just workspace definition
 
 [workspace.package]
 version = "0.1.0"

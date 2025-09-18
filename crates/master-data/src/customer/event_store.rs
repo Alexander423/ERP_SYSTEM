@@ -297,7 +297,7 @@ impl CustomerEventStore for PostgresCustomerEventStore {
 
         query.push_str(" ORDER BY occurred_at DESC");
 
-        if let Some(limit_val) = limit {
+        if let Some(_limit_val) = limit {
             param_count += 1;
             query.push_str(&format!(" LIMIT ${}", param_count));
         }
@@ -475,9 +475,6 @@ impl CustomerEventStore for PostgresCustomerEventStore {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::customer::events::CustomerEvent;
-    use crate::customer::model::CustomerType;
 
     // Note: These would be integration tests requiring a test database
     // For now, they serve as documentation of the expected interface

@@ -4,7 +4,7 @@
 //! calculating metrics, generating insights, and updating dashboards.
 
 use async_trait::async_trait;
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -13,7 +13,7 @@ use tokio::sync::RwLock;
 
 use crate::customer::events::{CustomerEvent, CustomerEventWithMetadata};
 use crate::customer::model::*;
-use crate::error::{MasterDataError, Result};
+use crate::error::Result;
 use erp_core::TenantContext;
 
 /// Real-time analytics engine for customer insights

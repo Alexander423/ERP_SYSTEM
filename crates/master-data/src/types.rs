@@ -153,7 +153,7 @@ pub enum ContactType {
     Other,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, sqlx::Type)]
 #[sqlx(type_name = "payment_method", rename_all = "snake_case")]
 pub enum PaymentMethod {
     Cash,

@@ -13,8 +13,13 @@ pub struct TestContext {
 
 impl TestContext {
     pub async fn new() -> Self {
-        // Load test configuration
+        // Set test environment variables
         std::env::set_var("ENVIRONMENT", "testing");
+        std::env::set_var("DATABASE_URL", "postgresql://erp_admin:erp_secure_password_change_in_production@localhost:5432/erp_main");
+        std::env::set_var("REDIS_URL", "redis://:redis_secure_password_change_in_production@localhost:6379/1");
+        std::env::set_var("JWT_SECRET", "test-jwt-secret-key-for-testing-only-32-chars-minimum");
+        std::env::set_var("AES_ENCRYPTION_KEY", "test-encryption-key-exactly-32-ch");
+
         let config = Config::load().expect("Failed to load test config");
 
         // Initialize database
@@ -38,8 +43,11 @@ impl TestContext {
 
         // Create test tenant
         let repository = AuthRepository::new(db.clone());
+        let tenant_name = format!("test_company_{}", Uuid::new_v4());
+        let schema_name = format!("test_tenant_{}", Uuid::new_v4().to_string().replace('-', "_"));
+
         let tenant = repository
-            .create_tenant("Test Company", &format!("test_tenant_{}", Uuid::new_v4()))
+            .create_tenant(&tenant_name, &schema_name)
             .await
             .expect("Failed to create test tenant");
 

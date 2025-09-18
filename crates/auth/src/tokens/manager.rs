@@ -491,15 +491,33 @@ impl TokenManager {
         user_id: Uuid,
         purpose: TokenPurpose,
     ) -> Result<()> {
+        // Get specific tokens for this user from database to clear from cache
+        let pool = self.db.get_tenant_pool(tenant).await?;
+
+        let rows = sqlx::query(
+            "SELECT token FROM verification_tokens
+             WHERE tenant_id = $1 AND user_id = $2 AND purpose = $3 AND used = false"
+        )
+        .bind(tenant.tenant_id.0)
+        .bind(user_id)
+        .bind(purpose.to_string())
+        .fetch_all(pool.get())
+        .await?;
+
         let mut conn = self.redis.clone();
-        let pattern = format!("token:{}:{}:*", purpose.cache_prefix(), tenant.tenant_id.0);
+        let mut cleared_count = 0;
 
-        // Use SCAN instead of KEYS for better performance in production
-        let keys = self.scan_keys(&mut conn, &pattern).await?;
+        for row in rows {
+            let token: String = row.try_get("token")?;
+            let cache_key = format!("token:{}:{}:{}", purpose.cache_prefix(), tenant.tenant_id.0, token);
+            let deleted: u32 = conn.del(&cache_key).await?;
+            if deleted > 0 {
+                cleared_count += 1;
+            }
+        }
 
-        if !keys.is_empty() {
-            let _: u32 = conn.del(&keys).await?;
-            debug!("Cleared {} cached tokens for user: {}", keys.len(), user_id);
+        if cleared_count > 0 {
+            debug!("Cleared {} cached tokens for user: {}", cleared_count, user_id);
         }
 
         Ok(())
@@ -507,7 +525,7 @@ impl TokenManager {
 
     /// Non-blocking scan for Redis keys matching a pattern
     async fn scan_keys(&self, conn: &mut redis::aio::ConnectionManager, pattern: &str) -> Result<Vec<String>> {
-        use redis::{AsyncCommands, Cmd};
+        use redis::Cmd;
 
         let mut cursor: u64 = 0;
         let mut keys = Vec::new();

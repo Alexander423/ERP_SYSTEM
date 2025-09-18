@@ -1085,7 +1085,7 @@ impl ComplianceFramework for GdprCompliance {
         Ok(())
     }
 
-    async fn monitor_compliance(&self, framework: &Framework) -> Result<ComplianceStatus> {
+    async fn monitor_compliance(&self, _framework: &Framework) -> Result<ComplianceStatus> {
         // Implement continuous compliance monitoring
         // For now, return a default status
         Ok(ComplianceStatus::PartiallyCompliant)
@@ -1094,7 +1094,7 @@ impl ComplianceFramework for GdprCompliance {
     async fn validate_data_practices(
         &self,
         practices: &DataHandlingPractices,
-        framework: &Framework,
+        _framework: &Framework,
     ) -> Result<ValidationResult> {
         let mut findings = Vec::new();
 

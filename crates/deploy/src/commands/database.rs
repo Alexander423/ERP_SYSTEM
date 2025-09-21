@@ -42,7 +42,7 @@ pub async fn execute_database_command(
 async fn migrate_database(
     database_url: &str,
     tenant: Option<&str>,
-    target: Option<&str>,
+    _target: Option<&str>,
     dry_run: bool,
 ) -> Result<()> {
     println!("{}", "🔄 Running database migrations...".blue().bold());

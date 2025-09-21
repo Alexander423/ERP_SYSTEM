@@ -4,6 +4,7 @@ use anyhow::Result;
 use std::process::Command;
 
 /// Check if a command exists in the system PATH
+#[allow(dead_code)]
 pub fn command_exists(command: &str) -> bool {
     Command::new("which")
         .arg(command)
@@ -13,6 +14,7 @@ pub fn command_exists(command: &str) -> bool {
 }
 
 /// Format bytes into human-readable format
+#[allow(dead_code)]
 pub fn format_bytes(bytes: u64) -> String {
     const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
     let mut size = bytes as f64;
@@ -27,6 +29,7 @@ pub fn format_bytes(bytes: u64) -> String {
 }
 
 /// Generate a secure random password
+#[allow(dead_code)]
 pub fn generate_password(length: usize) -> String {
     use rand::Rng;
     const CHARSET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ\
@@ -44,6 +47,7 @@ pub fn generate_password(length: usize) -> String {
 }
 
 /// Validate email format
+#[allow(dead_code)]
 pub fn is_valid_email(email: &str) -> bool {
     use regex::Regex;
     let email_regex = Regex::new(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$").unwrap();
@@ -51,6 +55,7 @@ pub fn is_valid_email(email: &str) -> bool {
 }
 
 /// Convert a name to a valid database schema name
+#[allow(dead_code)]
 pub fn to_schema_name(name: &str) -> String {
     name.to_lowercase()
         .chars()
@@ -63,6 +68,7 @@ pub fn to_schema_name(name: &str) -> String {
 }
 
 /// Check if running as root/administrator
+#[allow(dead_code)]
 pub fn is_root() -> bool {
     #[cfg(unix)]
     {
@@ -103,6 +109,7 @@ pub fn is_root() -> bool {
 }
 
 /// Get system information
+#[allow(dead_code)]
 pub fn get_system_info() -> Result<SystemInfo> {
     let os_info = os_info::get();
 
@@ -115,6 +122,7 @@ pub fn get_system_info() -> Result<SystemInfo> {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct SystemInfo {
     pub os_type: String,
     pub os_version: String,
@@ -123,6 +131,7 @@ pub struct SystemInfo {
 }
 
 /// Progress bar utility
+#[allow(dead_code)]
 pub struct ProgressBar {
     total: usize,
     current: usize,
@@ -130,6 +139,7 @@ pub struct ProgressBar {
 }
 
 impl ProgressBar {
+    #[allow(dead_code)]
     pub fn new(total: usize) -> Self {
         Self {
             total,
@@ -138,22 +148,26 @@ impl ProgressBar {
         }
     }
 
+    #[allow(dead_code)]
     pub fn update(&mut self, current: usize) {
         self.current = current;
         self.display();
     }
 
+    #[allow(dead_code)]
     pub fn increment(&mut self) {
         self.current = (self.current + 1).min(self.total);
         self.display();
     }
 
+    #[allow(dead_code)]
     pub fn finish(&mut self) {
         self.current = self.total;
         self.display();
         println!();
     }
 
+    #[allow(dead_code)]
     fn display(&self) {
         let progress = if self.total > 0 {
             (self.current as f64 / self.total as f64).min(1.0)

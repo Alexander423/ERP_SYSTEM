@@ -4,7 +4,6 @@ use anyhow::Result;
 use std::process::Command;
 
 /// Check if a command exists in the system PATH
-#[allow(dead_code)]
 pub fn command_exists(command: &str) -> bool {
     Command::new("which")
         .arg(command)

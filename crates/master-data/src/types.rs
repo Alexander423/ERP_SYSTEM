@@ -75,6 +75,12 @@ pub struct ContactInfo {
     pub fax: Option<String>,
     pub preferred_language: Option<String>, // ISO 639-1
     pub communication_preferences: Option<CommunicationPreferences>,
+    #[validate(url)]
+    pub website: Option<String>,
+    pub social_media_accounts: Option<HashMap<String, String>>,
+    pub timezone: Option<String>, // IANA timezone
+    pub notes: Option<String>,
+    pub tags: Vec<String>,
     pub is_primary: bool,
     pub is_active: bool,
     pub audit: AuditFields,
@@ -134,6 +140,7 @@ pub enum AddressType {
     Headquarters,
     Branch,
     Warehouse,
+    Business,
     Other,
 }
 
@@ -419,5 +426,41 @@ impl TenantContext {
     pub fn has_feature(&self, feature: &str) -> bool {
         self.features.contains(&feature.to_string())
     }
+}
+
+// Additional missing types that are referenced in the code
+
+// Missing enum types from inventory
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type)]
+#[sqlx(type_name = "valuation_method", rename_all = "snake_case")]
+pub enum ValuationMethod {
+    Fifo,
+    Lifo,
+    WeightedAverage,
+    StandardCost,
+    SpecificCost,
+    RetailMethod,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type)]
+#[sqlx(type_name = "reservation_type", rename_all = "snake_case")]
+pub enum ReservationType {
+    SalesOrder,
+    ProductionOrder,
+    Transfer,
+    Quality,
+    Damage,
+    Special,
+    Promotional,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type)]
+#[sqlx(type_name = "order_priority", rename_all = "snake_case")]
+pub enum OrderPriority {
+    Low,
+    Normal,
+    High,
+    Rush,
+    Emergency,
 }
 

@@ -4,6 +4,7 @@
 //! including validation, workflow orchestration, and business rules.
 
 use super::{model::*, repository::SupplierRepository};
+use crate::types::{PaginationOptions, PaginationResult, TenantContext};
 use async_trait::async_trait;
 use chrono::Utc;
 use erp_core::error::{Error, ErrorCode, Result};

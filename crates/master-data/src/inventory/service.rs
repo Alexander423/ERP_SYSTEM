@@ -5,12 +5,51 @@
 
 use crate::inventory::model::*;
 use crate::inventory::repository::InventoryRepository;
+use crate::types::{ValuationMethod, OrderPriority, ReservationType};
+use crate::error::MasterDataError;
 use anyhow::Result;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc, Duration};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use std::sync::Arc;
 use std::collections::HashMap;
+
+// Request DTOs for service operations
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateStockTransferRequest {
+    pub from_location_id: Uuid,
+    pub to_location_id: Uuid,
+    pub product_id: Uuid,
+    pub quantity: i32,
+    pub priority: TransferPriority,
+    pub requested_date: DateTime<Utc>,
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateReservationRequest {
+    pub product_id: Uuid,
+    pub location_id: Uuid,
+    pub quantity: i32,
+    pub reservation_type: ReservationType,
+    pub reference_id: Uuid,
+    pub priority: ReservationPriority,
+    pub reserved_until: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateReplenishmentRuleRequest {
+    pub product_id: Option<Uuid>,
+    pub location_id: Option<Uuid>,
+    pub reorder_point: Option<i32>,
+    pub max_stock_level: Option<i32>,
+    pub economic_order_quantity: Option<i32>,
+    pub lead_time_days: Option<i32>,
+    pub safety_stock: Option<i32>,
+    pub preferred_supplier_id: Option<Uuid>,
+    pub is_active: Option<bool>,
+}
 
 /// Comprehensive inventory service trait with advanced features
 #[async_trait]

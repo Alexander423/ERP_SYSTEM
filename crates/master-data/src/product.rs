@@ -30,6 +30,7 @@ pub use model::{
     ProductBatch, QualityStatus, ProductLifecycle, LifecycleStage, DynamicPrice,
     ProductAnalytics, AdvancedProductSearch, BulkPriceUpdateRequest,
     PriceUpdateType, PriceField, StockAdjustmentRequest, StockAdjustmentType,
+    ProductRecommendation, RecommendationType,
 };
 
 pub use repository::{
@@ -47,6 +48,5 @@ pub use service::{
 pub use analytics::{
     ProductAnalyticsEngine, DefaultProductAnalyticsEngine,
     ProductPerformanceMetrics, MarketIntelligence,
-    ProductRecommendation, RecommendationType,
     // Add other analytics types but avoid conflicts
 };

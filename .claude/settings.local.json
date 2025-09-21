@@ -232,7 +232,8 @@
       "Bash(SQLX_OFFLINE=true timeout 60s cargo check --package erp-core --package erp-auth --message-format=short)",
       "Bash(SQLX_OFFLINE=true timeout 15s cargo check -p erp-deploy --message-format=short)",
       "Bash(SQLX_OFFLINE=true timeout 30s cargo check --package erp-core --package erp-auth --package erp-api --message-format=short)",
-      "Bash(SQLX_OFFLINE=true timeout 20s cargo check -p erp-core --message-format=short)"
+      "Bash(SQLX_OFFLINE=true timeout 20s cargo check -p erp-core --message-format=short)",
+      "Bash(git revert:*)"
     ],
     "deny": []
   }

@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use uuid::Uuid;
 use std::collections::HashMap;
+use crate::types::{ValuationMethod, ReservationType};
 
 // These types are defined directly in this inventory module
 // (removed dependency on product module)

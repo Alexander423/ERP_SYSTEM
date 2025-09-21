@@ -4,6 +4,7 @@
 //! for multi-location scenarios and advanced analytics.
 
 use crate::inventory::model::*;
+use crate::types::{ReservationType, OrderPriority, ValuationMethod};
 use crate::error::{MasterDataError, Result};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};

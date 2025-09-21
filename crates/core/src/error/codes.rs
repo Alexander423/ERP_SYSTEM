@@ -53,6 +53,9 @@ pub enum ErrorCode {
     ResourceQuotaExceeded = 6004,
     NotFound = 6005,
     NotImplemented = 6006,
+    DatabaseError = 6007,
+    ConflictError = 6008,
+    BusinessRuleViolation = 6009,
 
     // Rate Limiting & Throttling Errors (7000-7999)
     RateLimitExceeded = 7000,
@@ -84,6 +87,7 @@ impl ErrorCode {
             | ErrorCode::DatabaseTransactionError
             | ErrorCode::DatabaseQueryError
             | ErrorCode::DatabaseMigrationError
+            | ErrorCode::DatabaseError
             | ErrorCode::NetworkError
             | ErrorCode::ExternalServiceError
             | ErrorCode::SerializationError
@@ -121,6 +125,7 @@ impl ErrorCode {
             | ErrorCode::MissingRequiredField
             | ErrorCode::InvalidFormat
             | ErrorCode::ValueOutOfRange
+            | ErrorCode::BusinessRuleViolation
             | ErrorCode::JobDeserializationError => 400,
 
             // 404 - Not Found
@@ -130,7 +135,8 @@ impl ErrorCode {
             // 409 - Conflict
             ErrorCode::ResourceAlreadyExists
             | ErrorCode::DuplicateValue
-            | ErrorCode::DatabaseConstraintViolation => 409,
+            | ErrorCode::DatabaseConstraintViolation
+            | ErrorCode::ConflictError => 409,
 
             // 423 - Locked
             ErrorCode::ResourceLocked => 423,
@@ -168,7 +174,8 @@ impl ErrorCode {
             | ErrorCode::DatabaseConstraintViolation
             | ErrorCode::DatabaseTransactionError
             | ErrorCode::DatabaseQueryError
-            | ErrorCode::DatabaseMigrationError => "database",
+            | ErrorCode::DatabaseMigrationError
+            | ErrorCode::DatabaseError => "database",
 
             ErrorCode::NetworkError
             | ErrorCode::NetworkTimeout
@@ -190,13 +197,15 @@ impl ErrorCode {
             | ErrorCode::MissingRequiredField
             | ErrorCode::InvalidFormat
             | ErrorCode::ValueOutOfRange
-            | ErrorCode::DuplicateValue => "validation",
+            | ErrorCode::DuplicateValue
+            | ErrorCode::BusinessRuleViolation => "validation",
 
             ErrorCode::ResourceNotFound
             | ErrorCode::ResourceAlreadyExists
             | ErrorCode::ResourceLocked
             | ErrorCode::ResourceInUse
-            | ErrorCode::ResourceQuotaExceeded => "resource",
+            | ErrorCode::ResourceQuotaExceeded
+            | ErrorCode::ConflictError => "resource",
 
             ErrorCode::RateLimitExceeded
             | ErrorCode::TooManyRequests

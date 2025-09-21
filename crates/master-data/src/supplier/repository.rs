@@ -9,7 +9,7 @@ use erp_core::{
     database::DatabasePool,
     error::{Error, ErrorCode, Result},
 };
-use sqlx::Row;
+use sqlx::{Row, Postgres, Encode};
 use uuid::Uuid;
 use crate::types::{PaginationOptions, PaginationResult};
 

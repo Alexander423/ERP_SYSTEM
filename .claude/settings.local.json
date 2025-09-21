@@ -183,7 +183,16 @@
       "Bash(SQLX_OFFLINE=true timeout 30s cargo test -p erp-master-data --lib --message-format=short)",
       "Bash(SQLX_OFFLINE=true cargo check -p erp-master-data --tests --message-format=short)",
       "Bash(SQLX_OFFLINE=true timeout 30s cargo check -p erp-master-data --lib --message-format=short)",
-      "Bash(SQLX_OFFLINE=true cargo check --all --lib --message-format=short)"
+      "Bash(SQLX_OFFLINE=true cargo check --all --lib --message-format=short)",
+      "mcp__context7__resolve-library-id",
+      "mcp__context7__get-library-docs",
+      "Bash(SQLX_OFFLINE=true timeout 30s cargo check -p erp-api --message-format=short)",
+      "Bash(SQLX_OFFLINE=true timeout 60s cargo build --all --message-format=short)",
+      "Bash(SQLX_OFFLINE=true timeout 60s cargo test -p erp-master-data --no-run --message-format=short)",
+      "Bash(SQLX_OFFLINE=true timeout 30s cargo test -p erp-master-data --lib simple --no-run --message-format=short)",
+      "Bash(terraform validate:*)",
+      "Bash(kubectl --dry-run=client apply -f infrastructure/k8s/)",
+      "Bash(kubectl --dry-run=client --validate=false apply -f infrastructure/k8s/)"
     ],
     "deny": []
   }

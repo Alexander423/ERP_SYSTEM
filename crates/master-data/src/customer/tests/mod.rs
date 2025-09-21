@@ -2,8 +2,9 @@
 pub mod simple;
 pub mod unit;
 
-// TODO: Professional test modules - temporarily disabled due to API mismatches
-// These need to be aligned with the current Customer model structure
+// TODO: Professional test modules - need API structure updates for Phase 2
+// The tests were created but need to be aligned with the current Customer model
+// This will be completed in Phase 2: Advanced ERP Features
 /*
 pub mod unit_tests;
 pub mod integration_tests;

@@ -1,0 +1,61 @@
+[package]
+name = "erp-deploy"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "ERP System Deployment CLI Tool"
+
+[[bin]]
+name = "erp-deploy"
+path = "src/main.rs"
+
+[dependencies]
+# CLI framework
+clap = { version = "4.0", features = ["derive", "env"] }
+colored = "2.0"
+
+# Async runtime
+tokio.workspace = true
+
+# Database
+sqlx.workspace = true
+uuid.workspace = true
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml = "0.9"
+toml = "0.8"
+
+# Utilities
+anyhow.workspace = true
+thiserror.workspace = true
+chrono.workspace = true
+regex = "1.0"
+
+# HTTP client
+reqwest = { version = "0.11", features = ["json"] }
+
+# File operations
+walkdir = "2.0"
+tempfile = "3.0"
+
+# Password operations
+bcrypt = "0.15"
+dialoguer = "0.11"
+
+# Docker operations
+bollard = "0.15"
+
+# Additional missing dependencies
+os_info = "3.0"
+libc = "0.2"
+env_logger = "0.11"
+hostname = "0.4"
+dirs = "5.0"
+rand = "0.8"
+
+# Windows compatibility
+[target.'cfg(windows)'.dependencies]
+winapi = { version = "0.3", features = ["processthreadsapi", "handleapi", "winbase"] }

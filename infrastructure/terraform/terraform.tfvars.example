@@ -1,0 +1,147 @@
+# ERP System - Terraform Variables Example
+# Copy this file to terraform.tfvars and customize for your deployment
+
+# General Configuration
+project_name = "erp-system"
+environment  = "production"
+owner        = "YourCompany"
+aws_region   = "us-west-2"
+
+# Networking
+vpc_cidr           = "10.0.0.0/16"
+enable_nat_gateway = true
+enable_vpn_gateway = false
+
+# EKS Configuration
+kubernetes_version = "1.28"
+
+# Production-ready node groups
+eks_node_groups = {
+  # Main application nodes
+  main = {
+    instance_types = ["t3.large"]
+    capacity_type  = "ON_DEMAND"
+    scaling_config = {
+      desired_size = 3
+      max_size     = 10
+      min_size     = 2
+    }
+    update_config = {
+      max_unavailable_percentage = 25
+    }
+  }
+
+  # Spot instances for non-critical workloads
+  spot = {
+    instance_types = ["t3.medium", "t3.large", "m5.large"]
+    capacity_type  = "SPOT"
+    scaling_config = {
+      desired_size = 2
+      max_size     = 5
+      min_size     = 0
+    }
+    update_config = {
+      max_unavailable_percentage = 50
+    }
+  }
+}
+
+# Database Configuration
+db_name                    = "erp_main"
+db_username               = "erp_admin"
+db_password               = "CHANGE_ME_STRONG_PASSWORD_123!"
+db_instance_class         = "db.t3.small"
+db_allocated_storage      = 200
+db_engine_version         = "16.1"
+backup_retention_period   = 14
+backup_window            = "07:00-09:00"
+maintenance_window       = "sun:05:00-sun:07:00"
+multi_az_deployment      = true
+enable_performance_insights = true
+
+# Redis Configuration
+redis_node_type       = "cache.t3.small"
+redis_num_nodes      = 2
+redis_parameter_group = "default.redis7"
+redis_engine_version = "7.0"
+redis_port           = 6379
+
+# Application Configuration
+domain_name         = "your-domain.com"
+ssl_certificate_arn = "arn:aws:acm:us-west-2:123456789012:certificate/12345678-1234-1234-1234-123456789012"
+
+# S3 Configuration
+s3_enable_versioning = true
+s3_enable_encryption = true
+
+s3_lifecycle_rules = [
+  {
+    id     = "transition_to_ia"
+    status = "Enabled"
+    transitions = [
+      {
+        days          = 30
+        storage_class = "STANDARD_IA"
+      },
+      {
+        days          = 90
+        storage_class = "GLACIER"
+      },
+      {
+        days          = 180
+        storage_class = "DEEP_ARCHIVE"
+      }
+    ]
+    expiration = {
+      days = 2555  # 7 years for compliance
+    }
+  }
+]
+
+# Monitoring Configuration
+enable_monitoring         = true
+enable_container_insights = true
+log_retention_days       = 30
+alert_email             = "alerts@your-company.com"
+
+# Backup Configuration
+backup_schedule = "cron(0 2 * * ? *)"  # Daily at 2 AM UTC
+
+backup_retention = {
+  cold_storage_after = 30   # Move to cold storage after 30 days
+  delete_after       = 2555 # Delete after 7 years
+}
+
+# Feature Flags
+enable_spot_instances  = true
+enable_autoscaling    = true
+enable_pod_security   = true
+enable_network_policy = true
+
+# Cost Optimization
+enable_cost_optimization = true
+enable_scheduled_scaling = true
+
+scheduled_scaling_config = {
+  scale_down_schedule = "0 19 * * MON-FRI"  # 7 PM weekdays
+  scale_up_schedule   = "0 8 * * MON-FRI"   # 8 AM weekdays
+  min_size_scaled     = 1
+}
+
+# Security Configuration
+enable_encryption_at_rest    = true
+enable_encryption_in_transit = true
+enable_secrets_manager       = true
+
+# Restrict access to your office/VPN CIDR blocks in production
+allowed_cidr_blocks = [
+  "10.0.0.0/8",     # Internal networks
+  "172.16.0.0/12",  # Internal networks
+  "192.168.0.0/16", # Internal networks
+  # "203.0.113.0/24", # Your office public IP range
+]
+
+# Compliance
+enable_compliance_logging = true
+enable_data_residency     = true
+compliance_standards      = ["SOC2", "ISO27001", "GDPR"]

@@ -3,7 +3,8 @@ members = [
     "crates/core",
     "crates/auth",
     "crates/api",
-    "crates/master-data"
+    "crates/master-data",
+    "crates/deploy"
 ]
 resolver = "2"
 

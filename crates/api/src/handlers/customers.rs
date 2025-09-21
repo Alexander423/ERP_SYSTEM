@@ -3,7 +3,7 @@
 //! HTTP handlers for customer CRUD operations
 
 use axum::{
-    extract::{State, Path, Query},
+    extract::{State, Path, Query, Extension},
     http::StatusCode,
     response::Json,
     routing::{get, post, put, delete, Router},
@@ -13,6 +13,17 @@ use serde_json::{json, Value};
 use uuid::Uuid;
 
 use crate::state::AppState;
+use erp_core::TenantContext;
+use erp_master_data::customer::model::{
+    CreateCustomerRequest as DomainCreateCustomerRequest,
+    UpdateCustomerRequest as DomainUpdateCustomerRequest,
+    CustomerSearchCriteria,
+    CustomerType,
+    CustomerLifecycleStage,
+    CreditStatus,
+    AcquisitionChannel
+};
+use erp_master_data::types::{IndustryClassification, BusinessSize, EntityStatus};
 
 #[derive(Debug, Deserialize)]
 pub struct PaginationParams {
@@ -27,20 +38,40 @@ fn default_limit() -> u32 { 20 }
 
 #[derive(Debug, Deserialize)]
 pub struct CreateCustomerRequest {
+    pub customer_number: Option<String>,
     pub legal_name: String,
-    pub customer_type: String, // TODO: Use proper enum
-    pub email: Option<String>,
-    pub phone: Option<String>,
-    pub website: Option<String>,
+    pub trade_names: Option<Vec<String>>,
+    pub customer_type: CustomerType,
+    pub industry_classification: Option<IndustryClassification>,
+    pub business_size: Option<BusinessSize>,
+    pub parent_customer_id: Option<Uuid>,
+    pub corporate_group_id: Option<Uuid>,
+    pub lifecycle_stage: Option<CustomerLifecycleStage>,
+    pub status: Option<EntityStatus>,
+    pub credit_status: Option<CreditStatus>,
+    pub acquisition_channel: Option<AcquisitionChannel>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct UpdateCustomerRequest {
     pub legal_name: Option<String>,
-    pub email: Option<String>,
-    pub phone: Option<String>,
-    pub website: Option<String>,
+    pub trade_names: Option<Vec<String>>,
+    pub industry_classification: Option<IndustryClassification>,
+    pub business_size: Option<BusinessSize>,
+    pub lifecycle_stage: Option<CustomerLifecycleStage>,
+    pub status: Option<EntityStatus>,
+    pub credit_status: Option<CreditStatus>,
 }
+
+#[derive(Debug, Deserialize)]
+pub struct CustomerSearchParams {
+    pub legal_name: Option<String>,
+    pub customer_number: Option<String>,
+    pub customer_type: Option<CustomerType>,
+    pub status: Option<EntityStatus>,
+    pub lifecycle_stage: Option<CustomerLifecycleStage>,
+}
+
 
 /// Create customer management routes
 pub fn customer_routes() -> Router<AppState> {
@@ -55,40 +86,61 @@ pub fn customer_routes() -> Router<AppState> {
 
 /// List all customers
 async fn list_customers(
-    State(_state): State<AppState>,
-    Query(params): Query<PaginationParams>,
+    State(state): State<AppState>,
+    Query(pagination): Query<PaginationParams>,
+    Query(search): Query<CustomerSearchParams>,
+    Extension(tenant_context): Extension<TenantContext>,
 ) -> Result<Json<Value>, StatusCode> {
-    // For now, use a default tenant ID since middleware integration needs more work
-    let tenant_id = uuid::Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000")
-        .unwrap_or_else(|_| uuid::Uuid::new_v4());
+    // Use tenant context from middleware
 
-    // For now, return a mock response since we need to wire up the repository
-    // In a complete implementation, we'd:
-    // 1. Create CustomerRepository instance
-    // 2. Call repository.list_customers with search criteria
-    // 3. Return paginated results
+    // Create repository instance
+    let repository = state.customer_repository(tenant_context.clone());
 
-    Ok(Json(json!({
-        "success": true,
-        "customers": [],
-        "pagination": {
-            "page": params.page,
-            "limit": params.limit,
-            "total": 0,
-            "total_pages": 0
+    // Build search criteria
+    let criteria = CustomerSearchCriteria {
+        search_term: search.legal_name,
+        customer_numbers: search.customer_number.map(|cn| vec![cn]),
+        customer_types: search.customer_type.map(|ct| vec![ct]),
+        statuses: search.status.map(|s| vec![s]),
+        lifecycle_stages: search.lifecycle_stage.map(|ls| vec![ls]),
+        ..Default::default()
+    };
+
+    // Call repository with pagination
+    match repository.list_customers(&criteria, pagination.page, pagination.limit).await {
+        Ok(search_response) => {
+            let total_pages = (search_response.total_count + pagination.limit as u64 - 1) / pagination.limit as u64;
+
+            Ok(Json(json!({
+                "success": true,
+                "customers": search_response.customers,
+                "pagination": {
+                    "page": pagination.page,
+                    "limit": pagination.limit,
+                    "total": search_response.total_count,
+                    "total_pages": total_pages
+                },
+                "tenant_id": tenant_context.tenant_id.0
+            })))
         },
-        "tenant_id": tenant_id
-    })))
+        Err(e) => {
+            tracing::error!("Failed to list customers: {}", e);
+            Ok(Json(json!({
+                "success": false,
+                "error": "Failed to retrieve customers",
+                "message": e.to_string()
+            })))
+        }
+    }
 }
 
 /// Create a new customer
 async fn create_customer(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
+    Extension(tenant_context): Extension<TenantContext>,
     Json(payload): Json<CreateCustomerRequest>,
 ) -> Result<Json<Value>, StatusCode> {
-    // For now, use a default tenant ID since middleware integration needs more work
-    let tenant_id = uuid::Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000")
-        .unwrap_or_else(|_| uuid::Uuid::new_v4());
+    // Use tenant context from middleware
 
     // Basic validation
     if payload.legal_name.trim().is_empty() {
@@ -98,117 +150,212 @@ async fn create_customer(
         })));
     }
 
-    // For now, return a mock response
-    // In a complete implementation, we'd:
-    // 1. Create CustomerRepository instance with tenant_context
-    // 2. Map API request to domain CreateCustomerRequest
-    // 3. Call repository.create_customer
-    // 4. Return created customer data
+    // Create repository instance
+    let repository = state.customer_repository(tenant_context.clone());
 
-    let customer_id = Uuid::new_v4();
+    // Map API request to domain CreateCustomerRequest
+    let domain_request = DomainCreateCustomerRequest {
+        customer_number: payload.customer_number,
+        legal_name: payload.legal_name,
+        trade_names: payload.trade_names,
+        customer_type: payload.customer_type,
+        industry_classification: payload.industry_classification,
+        business_size: payload.business_size,
+        parent_customer_id: payload.parent_customer_id,
+        corporate_group_id: payload.corporate_group_id,
+        lifecycle_stage: payload.lifecycle_stage,
+        status: payload.status,
+        credit_status: payload.credit_status,
+        acquisition_channel: payload.acquisition_channel,
+        customer_hierarchy_level: None,
+        consolidation_group: None,
+        addresses: None,
+        contacts: None,
+        tax_jurisdictions: None,
+        tax_numbers: None,
+        financial_info: None,
+        sales_representative_id: None,
+        account_manager_id: None,
+        external_ids: None,
+        sync_info: None,
+    };
 
-    Ok(Json(json!({
-        "success": true,
-        "customer": {
-            "id": customer_id,
-            "legal_name": payload.legal_name,
-            "customer_type": payload.customer_type,
-            "email": payload.email,
-            "phone": payload.phone,
-            "website": payload.website,
-            "tenant_id": tenant_id
+    // Use a default user ID for created_by (this would come from JWT in production)
+    let created_by = uuid::Uuid::new_v4();
+
+    // Call repository to create customer
+    match repository.create_customer(&domain_request, created_by).await {
+        Ok(customer) => {
+            Ok(Json(json!({
+                "success": true,
+                "customer": customer,
+                "message": "Customer created successfully"
+            })))
         },
-        "message": "Customer created successfully (mock response)"
-    })))
+        Err(e) => {
+            tracing::error!("Failed to create customer: {}", e);
+            Ok(Json(json!({
+                "success": false,
+                "error": "Failed to create customer",
+                "message": e.to_string()
+            })))
+        }
+    }
 }
 
 /// Get customer by ID
 async fn get_customer(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     Path(customer_id): Path<Uuid>,
+    Extension(tenant_context): Extension<TenantContext>,
 ) -> Result<Json<Value>, StatusCode> {
-    // For now, use a default tenant ID since middleware integration needs more work
-    let tenant_id = uuid::Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000")
-        .unwrap_or_else(|_| uuid::Uuid::new_v4());
+    // Use tenant context from middleware
 
-    // For now, return a mock response
-    // In a complete implementation, we'd:
-    // 1. Create CustomerRepository instance
-    // 2. Call repository.get_customer_by_id
-    // 3. Return customer data or 404
+    // Create repository instance
+    let repository = state.customer_repository(tenant_context.clone());
 
-    Ok(Json(json!({
-        "success": true,
-        "customer": {
-            "id": customer_id,
-            "legal_name": "Sample Customer",
-            "customer_type": "b2b",
-            "tenant_id": tenant_id
+    // Call repository to get customer
+    match repository.get_customer_by_id(customer_id).await {
+        Ok(Some(customer)) => {
+            Ok(Json(json!({
+                "success": true,
+                "customer": customer
+            })))
+        },
+        Ok(None) => {
+            Ok(Json(json!({
+                "success": false,
+                "error": "Customer not found",
+                "message": format!("Customer with ID {} not found", customer_id)
+            })))
+        },
+        Err(e) => {
+            tracing::error!("Failed to get customer {}: {}", customer_id, e);
+            Ok(Json(json!({
+                "success": false,
+                "error": "Failed to retrieve customer",
+                "message": e.to_string()
+            })))
         }
-    })))
+    }
 }
 
 /// Update customer
 async fn update_customer(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
+    Extension(tenant_context): Extension<TenantContext>,
     Path(customer_id): Path<Uuid>,
     Json(payload): Json<UpdateCustomerRequest>,
 ) -> Result<Json<Value>, StatusCode> {
-    // For now, use a default tenant ID since middleware integration needs more work
-    let tenant_id = uuid::Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000")
-        .unwrap_or_else(|_| uuid::Uuid::new_v4());
+    // Use tenant context from middleware
 
-    // For now, return a mock response
-    Ok(Json(json!({
-        "success": true,
-        "customer": {
-            "id": customer_id,
-            "legal_name": payload.legal_name.unwrap_or("Updated Customer".to_string()),
-            "email": payload.email,
-            "phone": payload.phone,
-            "website": payload.website,
-            "tenant_id": tenant_id
+    // Create repository instance
+    let repository = state.customer_repository(tenant_context.clone());
+
+    // Map API request to domain UpdateCustomerRequest
+    let domain_update = DomainUpdateCustomerRequest {
+        customer_number: None,
+        legal_name: payload.legal_name,
+        trade_names: payload.trade_names,
+        customer_type: None,
+        industry_classification: payload.industry_classification,
+        business_size: payload.business_size,
+        parent_customer_id: None,
+        corporate_group_id: None,
+        lifecycle_stage: payload.lifecycle_stage,
+        status: payload.status,
+        credit_status: payload.credit_status,
+        tax_numbers: None,
+        financial_info: None,
+        sales_representative_id: None,
+        account_manager_id: None,
+        external_ids: None,
+        sync_info: None,
+        version: 1, // Version for optimistic locking - in production this would come from the request
+    };
+
+    // Use a default user ID for modified_by (this would come from JWT in production)
+    let modified_by = uuid::Uuid::new_v4();
+
+    // Call repository to update customer
+    match repository.update_customer(customer_id, &domain_update, modified_by).await {
+        Ok(customer) => {
+            Ok(Json(json!({
+                "success": true,
+                "customer": customer,
+                "message": "Customer updated successfully"
+            })))
         },
-        "message": "Customer updated successfully (mock response)"
-    })))
+        Err(e) => {
+            tracing::error!("Failed to update customer {}: {}", customer_id, e);
+            Ok(Json(json!({
+                "success": false,
+                "error": "Failed to update customer",
+                "message": e.to_string()
+            })))
+        }
+    }
 }
 
 /// Delete customer
 async fn delete_customer(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     Path(customer_id): Path<Uuid>,
+    Extension(tenant_context): Extension<TenantContext>,
 ) -> Result<Json<Value>, StatusCode> {
-    // For now, use a default tenant ID since middleware integration needs more work
-    let tenant_id = uuid::Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000")
-        .unwrap_or_else(|_| uuid::Uuid::new_v4());
+    // Use tenant context from middleware
 
-    // For now, return a mock success response
-    Ok(Json(json!({
-        "success": true,
-        "message": format!("Customer {} deleted successfully (mock response)", customer_id),
-        "tenant_id": tenant_id
-    })))
+    // Create repository instance
+    let repository = state.customer_repository(tenant_context.clone());
+
+    // Use a default user ID for deleted_by (this would come from JWT in production)
+    let deleted_by = uuid::Uuid::new_v4();
+
+    // Call repository to delete customer (soft delete)
+    match repository.delete_customer(customer_id, deleted_by).await {
+        Ok(()) => {
+            Ok(Json(json!({
+                "success": true,
+                "message": format!("Customer {} deleted successfully", customer_id)
+            })))
+        },
+        Err(e) => {
+            tracing::error!("Failed to delete customer {}: {}", customer_id, e);
+            Ok(Json(json!({
+                "success": false,
+                "error": "Failed to delete customer",
+                "message": e.to_string()
+            })))
+        }
+    }
 }
 
 /// Get customer hierarchy
 async fn get_customer_hierarchy(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     Path(customer_id): Path<Uuid>,
+    Extension(tenant_context): Extension<TenantContext>,
 ) -> Result<Json<Value>, StatusCode> {
-    // For now, use a default tenant ID since middleware integration needs more work
-    let tenant_id = uuid::Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000")
-        .unwrap_or_else(|_| uuid::Uuid::new_v4());
+    // Use tenant context from middleware
 
-    // For now, return a mock hierarchy
-    Ok(Json(json!({
-        "success": true,
-        "hierarchy": [
-            {
-                "id": customer_id,
-                "legal_name": "Parent Customer",
-                "level": 0
-            }
-        ],
-        "tenant_id": tenant_id
-    })))
+    // Create repository instance
+    let repository = state.customer_repository(tenant_context.clone());
+
+    // Call repository to get customer hierarchy
+    match repository.get_customer_hierarchy(customer_id).await {
+        Ok(hierarchy) => {
+            Ok(Json(json!({
+                "success": true,
+                "hierarchy": hierarchy
+            })))
+        },
+        Err(e) => {
+            tracing::error!("Failed to get customer hierarchy for {}: {}", customer_id, e);
+            Ok(Json(json!({
+                "success": false,
+                "error": "Failed to retrieve customer hierarchy",
+                "message": e.to_string()
+            })))
+        }
+    }
 }

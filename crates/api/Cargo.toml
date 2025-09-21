@@ -14,6 +14,7 @@ path = "src/main.rs"
 # Internal
 erp-core = { path = "../core", features = ["axum"] }
 erp-auth = { path = "../auth" }
+erp-master-data = { path = "../master-data" }
 
 # Async runtime
 tokio.workspace = true

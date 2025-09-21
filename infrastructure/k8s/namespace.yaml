@@ -1,0 +1,282 @@
+# ERP System - Kubernetes Namespace Configuration
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: erp-system
+  labels:
+    name: erp-system
+    app.kubernetes.io/name: erp-system
+    app.kubernetes.io/instance: erp-system
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: namespace
+    app.kubernetes.io/part-of: erp-system
+    app.kubernetes.io/managed-by: kubernetes
+  annotations:
+    description: "ERP System application namespace"
+    contact: "erp-team@company.com"
+
+---
+# Resource Quotas for the namespace
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: erp-system-quota
+  namespace: erp-system
+  labels:
+    app.kubernetes.io/name: erp-system
+    app.kubernetes.io/component: resource-quota
+spec:
+  hard:
+    # Compute resources
+    requests.cpu: "4"
+    requests.memory: 8Gi
+    limits.cpu: "8"
+    limits.memory: 16Gi
+
+    # Storage
+    requests.storage: 100Gi
+    persistentvolumeclaims: "10"
+
+    # Objects
+    pods: "50"
+    services: "20"
+    secrets: "30"
+    configmaps: "30"
+    persistentvolumeclaims: "10"
+
+    # Load balancers
+    services.loadbalancers: "3"
+
+---
+# Limit Ranges for default resource constraints
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: erp-system-limits
+  namespace: erp-system
+  labels:
+    app.kubernetes.io/name: erp-system
+    app.kubernetes.io/component: limit-range
+spec:
+  limits:
+    # Default limits for containers
+    - default:
+        cpu: 500m
+        memory: 512Mi
+      defaultRequest:
+        cpu: 100m
+        memory: 128Mi
+      type: Container
+
+    # Limits for pods
+    - max:
+        cpu: 2
+        memory: 4Gi
+      min:
+        cpu: 50m
+        memory: 64Mi
+      type: Pod
+
+    # Limits for persistent volume claims
+    - max:
+        storage: 50Gi
+      min:
+        storage: 1Gi
+      type: PersistentVolumeClaim
+
+---
+# Network Policy for namespace isolation
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: erp-system-network-policy
+  namespace: erp-system
+  labels:
+    app.kubernetes.io/name: erp-system
+    app.kubernetes.io/component: network-policy
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+
+  ingress:
+    # Allow ingress from ingress controller
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8080
+
+    # Allow ingress from monitoring namespace
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: monitoring
+      ports:
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 9090
+
+    # Allow inter-pod communication within namespace
+    - from:
+        - podSelector: {}
+
+  egress:
+    # Allow DNS resolution
+    - to: []
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+
+    # Allow HTTPS outbound (for external APIs, package downloads)
+    - to: []
+      ports:
+        - protocol: TCP
+          port: 443
+
+    # Allow HTTP outbound (for health checks, APIs)
+    - to: []
+      ports:
+        - protocol: TCP
+          port: 80
+
+    # Allow database connections (adjust as needed)
+    - to: []
+      ports:
+        - protocol: TCP
+          port: 5432  # PostgreSQL
+        - protocol: TCP
+          port: 6379  # Redis
+
+    # Allow inter-pod communication within namespace
+    - to:
+        - podSelector: {}
+
+---
+# Pod Security Standards
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: erp-system-pod-security-config
+  namespace: erp-system
+  labels:
+    app.kubernetes.io/name: erp-system
+    app.kubernetes.io/component: security-config
+data:
+  pod-security-standard: |
+    # Pod Security Standards Configuration
+    # Applied via admission controller or policy engine
+
+    # Enforce restricted security profile
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 1000
+      runAsGroup: 1000
+      fsGroup: 2000
+      seccompProfile:
+        type: RuntimeDefault
+
+    # Container security requirements
+    containers:
+      - securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 1000
+          seccompProfile:
+            type: RuntimeDefault
+
+---
+# Service Account for ERP System
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: erp-system-sa
+  namespace: erp-system
+  labels:
+    app.kubernetes.io/name: erp-system
+    app.kubernetes.io/component: service-account
+  annotations:
+    eks.amazonaws.com/role-arn: "arn:aws:iam::ACCOUNT_ID:role/erp-system-pod-role"
+automountServiceAccountToken: true
+
+---
+# RBAC - Role for ERP System service account
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: erp-system-role
+  namespace: erp-system
+  labels:
+    app.kubernetes.io/name: erp-system
+    app.kubernetes.io/component: rbac
+rules:
+  # Allow reading config maps and secrets
+  - apiGroups: [""]
+    resources: ["configmaps", "secrets"]
+    verbs: ["get", "list", "watch"]
+
+  # Allow reading service endpoints for service discovery
+  - apiGroups: [""]
+    resources: ["endpoints", "services"]
+    verbs: ["get", "list", "watch"]
+
+  # Allow reading pods for health checks
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+
+---
+# RBAC - Role binding
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: erp-system-role-binding
+  namespace: erp-system
+  labels:
+    app.kubernetes.io/name: erp-system
+    app.kubernetes.io/component: rbac
+subjects:
+  - kind: ServiceAccount
+    name: erp-system-sa
+    namespace: erp-system
+roleRef:
+  kind: Role
+  name: erp-system-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# Priority Class for critical ERP workloads
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: erp-system-high-priority
+  labels:
+    app.kubernetes.io/name: erp-system
+    app.kubernetes.io/component: priority-class
+value: 1000
+globalDefault: false
+description: "High priority class for critical ERP system components"
+
+---
+# Priority Class for regular ERP workloads
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: erp-system-normal-priority
+  labels:
+    app.kubernetes.io/name: erp-system
+    app.kubernetes.io/component: priority-class
+value: 100
+globalDefault: false
+description: "Normal priority class for regular ERP system components"

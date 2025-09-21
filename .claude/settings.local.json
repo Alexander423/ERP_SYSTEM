@@ -228,7 +228,8 @@
       "Bash(DATABASE_URL=\"postgresql://erp_admin:erp_secure_password_change_in_production@localhost:5432/erp_main\" rustc --edition 2021 apply_schema.rs --extern tokio --extern sqlx -L target/release/deps)",
       "Bash(DATABASE_URL=\"postgresql://erp_admin:erp_secure_password_change_in_production@localhost:5432/erp_main\" timeout 60 cargo run --bin erp-deploy database setup)",
       "Bash(DATABASE_URL=\"postgresql://erp_admin:erp_secure_password_change_in_production@localhost:5432/erp_main\" timeout 180 cargo sqlx prepare --workspace)",
-      "Bash(PGPASSWORD=erp_secure_password_change_in_production psql -h localhost -U erp_admin -d erp_main -f complete_schema.sql)"
+      "Bash(PGPASSWORD=erp_secure_password_change_in_production psql -h localhost -U erp_admin -d erp_main -f complete_schema.sql)",
+      "Bash(SQLX_OFFLINE=true timeout 60s cargo check --package erp-core --package erp-auth --message-format=short)"
     ],
     "deny": []
   }

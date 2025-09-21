@@ -13,7 +13,7 @@ use uuid::Uuid;
 use std::collections::HashMap;
 
 #[async_trait]
-pub trait InventoryRepository {
+pub trait InventoryRepository: Send + Sync {
     // Core Inventory Operations
     async fn get_location_inventory(&self, product_id: Uuid, location_id: Uuid) -> Result<LocationInventory>;
     async fn get_all_location_inventories(&self, product_id: Uuid) -> Result<Vec<LocationInventory>>;

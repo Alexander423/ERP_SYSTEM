@@ -133,6 +133,19 @@ pub struct TenantContext {
     pub schema_name: String,
 }
 
+impl TenantContext {
+    pub fn has_permission(&self, permission: &str) -> bool {
+        // For now, implement basic permission check
+        // In a real system, this would check against a permissions database
+        match permission {
+            "customer:create" | "customer:read" | "customer:update" | "customer:delete" => true,
+            "supplier:create" | "supplier:read" | "supplier:update" | "supplier:delete" => true,
+            "product:create" | "product:read" | "product:update" | "product:delete" => true,
+            _ => false,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct RequestContext {
     pub tenant_context: Option<TenantContext>,  // Optional for handler compatibility

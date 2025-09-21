@@ -421,6 +421,3 @@ impl TenantContext {
     }
 }
 
-// Aliases for backward compatibility
-pub type PaginationOptions = PaginationParams;
-pub type PaginationResult<T> = PaginatedResponse<T>;

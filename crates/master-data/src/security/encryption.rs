@@ -261,6 +261,14 @@ impl FieldEncryption for EncryptionService {
         field_name: &str,
         context: &EncryptionContext,
     ) -> Result<EncryptedField> {
+        // Check compliance policies for this data classification
+        let policies = self.compliance_policies.read().unwrap();
+        let _policy = policies.get(&context.data_classification)
+            .ok_or_else(|| MasterDataError::ValidationError {
+                field: field_name.to_string(),
+                message: "No encryption policy found for data classification".to_string(),
+            })?;
+
         let field_key = self.derive_field_key(context, field_name)?;
         let key = Key::<Aes256Gcm>::from_slice(&field_key);
         let cipher = Aes256Gcm::new(key);

@@ -93,8 +93,8 @@ async fn list_customers(
 ) -> Result<Json<Value>, StatusCode> {
     // Use tenant context from middleware
 
-    // Create repository instance
-    let repository = state.customer_repository(tenant_context.clone());
+    // Create service instance with business logic
+    let service = state.customer_service(tenant_context.clone());
 
     // Build search criteria
     let criteria = CustomerSearchCriteria {
@@ -103,22 +103,22 @@ async fn list_customers(
         customer_types: search.customer_type.map(|ct| vec![ct]),
         statuses: search.status.map(|s| vec![s]),
         lifecycle_stages: search.lifecycle_stage.map(|ls| vec![ls]),
+        page: Some(pagination.page),
+        page_size: Some(pagination.limit),
         ..Default::default()
     };
 
-    // Call repository with pagination
-    match repository.list_customers(&criteria, pagination.page, pagination.limit).await {
+    // Call service with business rules applied
+    match service.search_customers(criteria).await {
         Ok(search_response) => {
-            let total_pages = (search_response.total_count + pagination.limit as u64 - 1) / pagination.limit as u64;
-
             Ok(Json(json!({
                 "success": true,
                 "customers": search_response.customers,
                 "pagination": {
-                    "page": pagination.page,
-                    "limit": pagination.limit,
+                    "page": search_response.page,
+                    "limit": search_response.page_size,
                     "total": search_response.total_count,
-                    "total_pages": total_pages
+                    "total_pages": search_response.total_pages
                 },
                 "tenant_id": tenant_context.tenant_id.0
             })))
@@ -150,8 +150,8 @@ async fn create_customer(
         })));
     }
 
-    // Create repository instance
-    let repository = state.customer_repository(tenant_context.clone());
+    // Create service instance with business logic
+    let service = state.customer_service(tenant_context.clone());
 
     // Map API request to domain CreateCustomerRequest
     let domain_request = DomainCreateCustomerRequest {
@@ -183,8 +183,8 @@ async fn create_customer(
     // Use a default user ID for created_by (this would come from JWT in production)
     let created_by = uuid::Uuid::new_v4();
 
-    // Call repository to create customer
-    match repository.create_customer(&domain_request, created_by).await {
+    // Call service with business rules applied
+    match service.create_customer(domain_request, created_by).await {
         Ok(customer) => {
             Ok(Json(json!({
                 "success": true,
@@ -211,11 +211,11 @@ async fn get_customer(
 ) -> Result<Json<Value>, StatusCode> {
     // Use tenant context from middleware
 
-    // Create repository instance
-    let repository = state.customer_repository(tenant_context.clone());
+    // Create service instance with business logic
+    let service = state.customer_service(tenant_context.clone());
 
-    // Call repository to get customer
-    match repository.get_customer_by_id(customer_id).await {
+    // Call service with business rules applied
+    match service.get_customer(customer_id).await {
         Ok(Some(customer)) => {
             Ok(Json(json!({
                 "success": true,
@@ -249,8 +249,8 @@ async fn update_customer(
 ) -> Result<Json<Value>, StatusCode> {
     // Use tenant context from middleware
 
-    // Create repository instance
-    let repository = state.customer_repository(tenant_context.clone());
+    // Create service instance with business logic
+    let service = state.customer_service(tenant_context.clone());
 
     // Map API request to domain UpdateCustomerRequest
     let domain_update = DomainUpdateCustomerRequest {
@@ -277,8 +277,8 @@ async fn update_customer(
     // Use a default user ID for modified_by (this would come from JWT in production)
     let modified_by = uuid::Uuid::new_v4();
 
-    // Call repository to update customer
-    match repository.update_customer(customer_id, &domain_update, modified_by).await {
+    // Call service with business rules applied
+    match service.update_customer(customer_id, domain_update, modified_by).await {
         Ok(customer) => {
             Ok(Json(json!({
                 "success": true,
@@ -305,14 +305,14 @@ async fn delete_customer(
 ) -> Result<Json<Value>, StatusCode> {
     // Use tenant context from middleware
 
-    // Create repository instance
-    let repository = state.customer_repository(tenant_context.clone());
+    // Create service instance with business logic
+    let service = state.customer_service(tenant_context.clone());
 
     // Use a default user ID for deleted_by (this would come from JWT in production)
     let deleted_by = uuid::Uuid::new_v4();
 
-    // Call repository to delete customer (soft delete)
-    match repository.delete_customer(customer_id, deleted_by).await {
+    // Call service with business rules applied (soft delete)
+    match service.delete_customer(customer_id, deleted_by).await {
         Ok(()) => {
             Ok(Json(json!({
                 "success": true,
@@ -338,7 +338,7 @@ async fn get_customer_hierarchy(
 ) -> Result<Json<Value>, StatusCode> {
     // Use tenant context from middleware
 
-    // Create repository instance
+    // Create repository instance (hierarchy not yet in service layer)
     let repository = state.customer_repository(tenant_context.clone());
 
     // Call repository to get customer hierarchy

@@ -244,7 +244,7 @@ async fn show_nginx_logs(follow: bool, lines: usize) -> Result<()> {
         if Path::new(log_path).exists() {
             found_logs = true;
             println!("\n{}", format!("=== {} ===", log_path).cyan());
-            show_file_logs(log_path, false, lines / 2, None).await?;
+            show_file_logs(log_path, follow, lines / 2, None).await?;
         }
     }
 

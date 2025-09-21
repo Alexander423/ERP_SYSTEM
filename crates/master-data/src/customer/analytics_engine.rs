@@ -244,6 +244,15 @@ impl CustomerAnalyticsEngine for InMemoryAnalyticsEngine {
             *counts.entry(event.event.event_type().to_string()).or_insert(0) += 1;
         }
 
+        // Check if we have enough events for prediction using min_events_for_prediction
+        let total_events: i64 = self.event_counts.read().await.values().sum();
+        if total_events < self.min_events_for_prediction {
+            tracing::debug!("Not enough events for prediction: {} < {}", total_events, self.min_events_for_prediction);
+        }
+
+        // Use tenant context for logging
+        tracing::debug!("Processing event for tenant: {}", self.tenant_context.tenant_id);
+
         // Process event based on type
         match &event.event {
             CustomerEvent::CustomerCreated { .. } => {
@@ -272,8 +281,11 @@ impl CustomerAnalyticsEngine for InMemoryAnalyticsEngine {
             }
         }
 
-        // Update tenant-wide metrics
-        self.update_tenant_metrics().await?;
+        // Update tenant-wide metrics within calculation window
+        let cutoff_date = chrono::Utc::now() - chrono::Duration::days(self.calculation_window_days);
+        if event.metadata.occurred_at > cutoff_date {
+            self.update_tenant_metrics().await?;
+        }
 
         Ok(())
     }

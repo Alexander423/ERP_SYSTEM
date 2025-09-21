@@ -357,36 +357,151 @@ mod tests {
 
     #[async_trait]
     impl CustomerService for MockCustomerService {
-        async fn create_customer(&self, _request: CreateCustomerRequest, _created_by: Uuid) -> Result<Customer> {
-            todo!("Mock implementation needed")
+        async fn create_customer(&self, request: CreateCustomerRequest, created_by: Uuid) -> Result<Customer> {
+            use chrono::Utc;
+
+            // Create mock customer with provided data
+            let customer_id = Uuid::new_v4();
+            let now = Utc::now();
+
+            Ok(Customer {
+                id: customer_id,
+                customer_number: request.customer_number.unwrap_or_else(|| "B2B000001".to_string()),
+                legal_name: request.legal_name,
+                trade_names: request.trade_names.unwrap_or_default(),
+                customer_type: request.customer_type,
+                lifecycle_stage: request.lifecycle_stage.unwrap_or(CustomerLifecycleStage::Lead),
+                status: request.status.unwrap_or(EntityStatus::Active),
+                contact_info: request.contact_info,
+                addresses: request.addresses,
+                financial_info: request.financial_info,
+                metadata: request.metadata.unwrap_or_default(),
+                business_info: BusinessInfo {
+                    industry_classification: request.industry_classification,
+                    business_size: request.business_size,
+                    annual_revenue: None,
+                    employee_count: None,
+                    tax_id: None,
+                    registration_number: None,
+                    website: None,
+                    acquisition_channel: None,
+                    acquisition_date: Some(now.date_naive()),
+                    acquisition_cost: None,
+                },
+                hierarchy_info: HierarchyInfo {
+                    parent_customer_id: request.parent_customer_id,
+                    corporate_group_id: request.corporate_group_id,
+                    hierarchy_level: 1,
+                    subsidiary_count: 0,
+                    is_parent: false,
+                    relationship_type: None,
+                },
+                performance_metrics: CustomerPerformanceMetrics::default(),
+                audit: AuditInfo {
+                    created_by,
+                    created_at: now,
+                    modified_by: Some(created_by),
+                    modified_at: Some(now),
+                    version: 1,
+                    tenant_id: TenantId(Uuid::new_v4()),
+                },
+            })
         }
 
-        async fn update_customer(&self, _id: Uuid, _request: UpdateCustomerRequest, _modified_by: Uuid) -> Result<Customer> {
-            todo!("Mock implementation needed")
+        async fn update_customer(&self, id: Uuid, request: UpdateCustomerRequest, modified_by: Uuid) -> Result<Customer> {
+            use chrono::Utc;
+
+            // Return mock updated customer
+            let now = Utc::now();
+
+            Ok(Customer {
+                id,
+                customer_number: request.customer_number.unwrap_or_else(|| "B2B000001".to_string()),
+                legal_name: request.legal_name.unwrap_or_else(|| "Updated Customer".to_string()),
+                trade_names: request.trade_names.unwrap_or_default(),
+                customer_type: request.customer_type.unwrap_or(CustomerType::B2B),
+                lifecycle_stage: request.lifecycle_stage.unwrap_or(CustomerLifecycleStage::Lead),
+                status: request.status.unwrap_or(EntityStatus::Active),
+                contact_info: request.contact_info.unwrap_or_default(),
+                addresses: request.addresses.unwrap_or_default(),
+                financial_info: request.financial_info.unwrap_or_default(),
+                metadata: request.metadata.unwrap_or_default(),
+                business_info: BusinessInfo::default(),
+                hierarchy_info: HierarchyInfo::default(),
+                performance_metrics: CustomerPerformanceMetrics::default(),
+                audit: AuditInfo {
+                    created_by: modified_by,
+                    created_at: now,
+                    modified_by: Some(modified_by),
+                    modified_at: Some(now),
+                    version: request.version + 1,
+                    tenant_id: TenantId(Uuid::new_v4()),
+                },
+            })
         }
 
-        async fn get_customer(&self, _id: Uuid) -> Result<Option<Customer>> {
-            todo!("Mock implementation needed")
+        async fn get_customer(&self, id: Uuid) -> Result<Option<Customer>> {
+            use chrono::Utc;
+
+            // Return mock customer
+            let now = Utc::now();
+            let creator_id = Uuid::new_v4();
+
+            Ok(Some(Customer {
+                id,
+                customer_number: "B2B000001".to_string(),
+                legal_name: "Mock Customer Ltd.".to_string(),
+                trade_names: vec!["Mock Corp".to_string()],
+                customer_type: CustomerType::B2B,
+                lifecycle_stage: CustomerLifecycleStage::Active,
+                status: EntityStatus::Active,
+                contact_info: ContactInfo::default(),
+                addresses: vec![],
+                financial_info: FinancialInfo::default(),
+                metadata: std::collections::HashMap::new(),
+                business_info: BusinessInfo::default(),
+                hierarchy_info: HierarchyInfo::default(),
+                performance_metrics: CustomerPerformanceMetrics::default(),
+                audit: AuditInfo {
+                    created_by: creator_id,
+                    created_at: now,
+                    modified_by: Some(creator_id),
+                    modified_at: Some(now),
+                    version: 1,
+                    tenant_id: TenantId(Uuid::new_v4()),
+                },
+            }))
         }
 
         async fn search_customers(&self, _criteria: CustomerSearchCriteria) -> Result<CustomerSearchResponse> {
-            todo!("Mock implementation needed")
+            // Return empty search response
+            Ok(CustomerSearchResponse {
+                customers: vec![],
+                total_count: 0,
+                page: 1,
+                page_size: 50,
+                total_pages: 0,
+            })
         }
 
         async fn delete_customer(&self, _id: Uuid, _deleted_by: Uuid) -> Result<()> {
-            todo!("Mock implementation needed")
+            // Mock successful deletion
+            Ok(())
         }
 
         async fn validate_credit_limit_increase(&self, _customer_id: Uuid, _new_limit: rust_decimal::Decimal) -> Result<()> {
-            todo!("Mock implementation needed")
+            // Mock successful validation
+            Ok(())
         }
 
         async fn update_lifecycle_stage(&self, _customer_id: Uuid, _new_stage: CustomerLifecycleStage, _updated_by: Uuid) -> Result<()> {
-            todo!("Mock implementation needed")
+            // Mock successful update
+            Ok(())
         }
 
         async fn calculate_performance_metrics(&self, _customer_id: Uuid) -> Result<CustomerPerformanceMetrics> {
-            todo!("Mock implementation needed")
+            // Return mock performance metrics
+            Ok(CustomerPerformanceMetrics::default())
         }
 
         async fn generate_customer_number(&self, _customer_type: CustomerType) -> Result<String> {

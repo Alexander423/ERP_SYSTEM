@@ -507,12 +507,18 @@ impl TokenManager {
         let mut conn = self.redis.clone();
         let mut cleared_count = 0;
 
+        // Use scan_keys to find all matching keys first
+        let pattern = format!("token:{}:{}:*", purpose.cache_prefix(), tenant.tenant_id.0);
+        let cache_keys = self.scan_keys(&mut conn, &pattern).await?;
+
         for row in rows {
             let token: String = row.try_get("token")?;
             let cache_key = format!("token:{}:{}:{}", purpose.cache_prefix(), tenant.tenant_id.0, token);
-            let deleted: u32 = conn.del(&cache_key).await?;
-            if deleted > 0 {
-                cleared_count += 1;
+            if cache_keys.contains(&cache_key) {
+                let deleted: u32 = conn.del(&cache_key).await?;
+                if deleted > 0 {
+                    cleared_count += 1;
+                }
             }
         }
 

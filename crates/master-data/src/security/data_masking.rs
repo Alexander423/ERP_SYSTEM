@@ -4,6 +4,7 @@
 //! sensitive information while maintaining data utility for analytics and testing.
 
 use async_trait::async_trait;
+use chrono::{DateTime, Utc, Timelike};
 use rand::Rng;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -214,6 +215,7 @@ pub struct MaskingContext {
     pub legal_basis: Option<String>,
     pub session_id: Option<String>,
     pub ip_address: Option<String>,
+    pub user_roles: Option<Vec<String>>,
     pub timestamp: chrono::DateTime<chrono::Utc>,
     pub attributes: HashMap<String, String>,
 }
@@ -225,10 +227,155 @@ pub struct PrivacyControls {
     data_inventory: DataInventory,
 }
 
+impl PrivacyControls {
+    pub fn new(
+        masking_service: Box<dyn DataMasking>,
+        consent_tracker: ConsentTracker,
+        data_inventory: DataInventory,
+    ) -> Self {
+        Self {
+            masking_service,
+            consent_tracker,
+            data_inventory,
+        }
+    }
+
+    /// Mask data based on consent and data inventory
+    pub async fn mask_data_with_consent(&self, data: &str, user_id: Uuid, purpose: &str) -> Result<String> {
+        // Check consent first
+        if self.consent_tracker.has_consent(user_id, purpose) {
+            // Check data inventory for masking requirements
+            if self.data_inventory.requires_masking(purpose) {
+                // Create a basic masking policy and context
+                let policy = MaskingPolicy {
+                    id: Uuid::new_v4(),
+                    name: "Privacy Redaction".to_string(),
+                    description: "Redact data for privacy compliance".to_string(),
+                    table_name: "dynamic".to_string(),
+                    column_name: "dynamic".to_string(),
+                    masking_type: MaskingType::Redaction,
+                    masking_config: MaskingConfig {
+                        replacement_value: Some("*".to_string()),
+                        replacement_char: Some('*'),
+                        preserve_start: None,
+                        preserve_end: None,
+                        format_pattern: None,
+                        substitution_source: None,
+                        hash_algorithm: None,
+                        date_shift_range: None,
+                        numeric_variance_percent: None,
+                        custom_params: None,
+                        deterministic: false,
+                        seed: None,
+                    },
+                    conditions: None,
+                    exemptions: None,
+                    is_active: true,
+                    tenant_id: Uuid::nil(),
+                    created_by: user_id,
+                    created_at: chrono::Utc::now(),
+                    modified_by: user_id,
+                    modified_at: chrono::Utc::now(),
+                };
+                let context = MaskingContext {
+                    user_id,
+                    tenant_id: Uuid::nil(),
+                    purpose: Some(purpose.to_string()),
+                    legal_basis: None,
+                    session_id: None,
+                    ip_address: None,
+                    user_roles: None,
+                    timestamp: chrono::Utc::now(),
+                    attributes: HashMap::new(),
+                };
+                self.masking_service.mask_field(data, &policy, &context).await
+            } else {
+                Ok(data.to_string())
+            }
+        } else {
+            // No consent, fully mask
+            let policy = MaskingPolicy {
+                id: Uuid::new_v4(),
+                name: "No Consent Redaction".to_string(),
+                description: "Full redaction due to lack of consent".to_string(),
+                table_name: "dynamic".to_string(),
+                column_name: "dynamic".to_string(),
+                masking_type: MaskingType::Redaction,
+                masking_config: MaskingConfig {
+                    replacement_value: Some("***".to_string()),
+                    replacement_char: Some('*'),
+                    preserve_start: None,
+                    preserve_end: None,
+                    format_pattern: None,
+                    substitution_source: None,
+                    hash_algorithm: None,
+                    date_shift_range: None,
+                    numeric_variance_percent: None,
+                    custom_params: None,
+                    deterministic: false,
+                    seed: None,
+                },
+                conditions: None,
+                exemptions: None,
+                is_active: true,
+                tenant_id: Uuid::nil(),
+                created_by: user_id,
+                created_at: chrono::Utc::now(),
+                modified_by: user_id,
+                modified_at: chrono::Utc::now(),
+            };
+            let context = MaskingContext {
+                user_id,
+                tenant_id: Uuid::nil(),
+                purpose: Some(purpose.to_string()),
+                legal_basis: None,
+                session_id: None,
+                ip_address: None,
+                user_roles: None,
+                timestamp: chrono::Utc::now(),
+                attributes: HashMap::new(),
+            };
+            self.masking_service.mask_field(data, &policy, &context).await
+        }
+    }
+
+    /// Get data inventory
+    pub fn get_data_inventory(&self) -> &DataInventory {
+        &self.data_inventory
+    }
+
+    /// Get consent tracker
+    pub fn get_consent_tracker(&self) -> &ConsentTracker {
+        &self.consent_tracker
+    }
+}
+
 /// Consent tracking for data processing
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConsentTracker {
     pub user_consents: HashMap<Uuid, Vec<ConsentRecord>>,
+}
+
+impl ConsentTracker {
+    pub fn new() -> Self {
+        Self {
+            user_consents: HashMap::new(),
+        }
+    }
+
+    /// Check if user has valid consent for purpose
+    pub fn has_consent(&self, user_id: Uuid, purpose: &str) -> bool {
+        if let Some(consents) = self.user_consents.get(&user_id) {
+            consents.iter().any(|consent| {
+                consent.processing_activities.contains(&purpose.to_string())
+                    && consent.consent_given
+                    && consent.withdrawal_date.is_none()
+                    && consent.expiry_date.map_or(true, |exp| exp > chrono::Utc::now())
+            })
+        } else {
+            false
+        }
+    }
 }
 
 /// Individual consent record
@@ -264,6 +411,32 @@ pub enum LegalBasis {
 pub struct DataInventory {
     pub data_categories: HashMap<String, DataCategory>,
     pub processing_activities: HashMap<String, ProcessingActivity>,
+}
+
+impl DataInventory {
+    pub fn new() -> Self {
+        Self {
+            data_categories: HashMap::new(),
+            processing_activities: HashMap::new(),
+        }
+    }
+
+    /// Check if purpose requires data masking
+    pub fn requires_masking(&self, purpose: &str) -> bool {
+        if let Some(activity) = self.processing_activities.get(purpose) {
+            // Check if any associated data categories require masking
+            activity.data_categories.iter().any(|cat_id| {
+                if let Some(category) = self.data_categories.get(cat_id) {
+                    matches!(category.sensitivity_level, SensitivityLevel::Confidential | SensitivityLevel::Restricted)
+                } else {
+                    false
+                }
+            })
+        } else {
+            // Default to requiring masking for unknown purposes
+            true
+        }
+    }
 }
 
 /// Data category definition
@@ -675,12 +848,14 @@ impl DataMaskingService {
             let matches = match exemption.exemption_type {
                 ExemptionType::User => context.user_id.to_string() == exemption.exemption_value,
                 ExemptionType::Role => {
-                    // Would check user roles here
-                    false // Placeholder
+                    // Check if user has the specified role
+                    context.user_roles.as_ref()
+                        .map_or(false, |roles| roles.contains(&exemption.exemption_value))
                 }
                 ExemptionType::IpRange => {
-                    // Would check IP address range here
-                    false // Placeholder
+                    // Check if user's IP address is in allowed range
+                    context.ip_address.as_ref()
+                        .map_or(false, |ip| self.is_ip_in_range(ip, &exemption.exemption_value))
                 }
                 ExemptionType::Purpose => {
                     context.purpose.as_ref().map_or(false, |p| p == &exemption.exemption_value)
@@ -689,8 +864,8 @@ impl DataMaskingService {
                     context.legal_basis.as_ref().map_or(false, |l| l == &exemption.exemption_value)
                 }
                 ExemptionType::TimeWindow => {
-                    // Would check if current time is within allowed window
-                    false // Placeholder
+                    // Check if current time is within allowed window
+                    self.is_time_in_window(&exemption.exemption_value)
                 }
             };
 
@@ -700,6 +875,50 @@ impl DataMaskingService {
         }
 
         false
+    }
+
+    /// Check if IP address is in the specified range
+    fn is_ip_in_range(&self, ip: &str, cidr: &str) -> bool {
+        // Basic IP range checking - in production, use a proper CIDR library
+        if let Some(slash_pos) = cidr.find('/') {
+            let network = &cidr[..slash_pos];
+            let prefix_len: u8 = cidr[slash_pos + 1..].parse().unwrap_or(32);
+
+            // Simple IPv4 check - in production, handle IPv6 as well
+            if ip.starts_with(network) && prefix_len <= 32 {
+                return true;
+            }
+        } else {
+            // Exact IP match
+            return ip == cidr;
+        }
+        false
+    }
+
+    /// Check if current time is within allowed window
+    fn is_time_in_window(&self, window_spec: &str) -> bool {
+        // Parse time window specification (e.g., "09:00-17:00", "MON-FRI:09:00-17:00")
+        let now = chrono::Utc::now();
+
+        if window_spec.contains(':') && window_spec.contains('-') {
+            // Simple time range check
+            if let Some(dash_pos) = window_spec.rfind('-') {
+                let start_time = &window_spec[..dash_pos];
+                let end_time = &window_spec[dash_pos + 1..];
+
+                // Basic time parsing - in production, use proper time parsing
+                if let (Ok(start_hour), Ok(end_hour)) = (
+                    start_time.split(':').next().unwrap_or("0").parse::<u32>(),
+                    end_time.split(':').next().unwrap_or("23").parse::<u32>()
+                ) {
+                    let current_hour = now.time().hour();
+                    return current_hour >= start_hour && current_hour <= end_hour;
+                }
+            }
+        }
+
+        // Default to allowing access if window spec is invalid
+        true
     }
 }
 
@@ -800,41 +1019,38 @@ impl DataMasking for DataMaskingService {
         Ok(false)
     }
 
-    async fn create_policy(&self, _policy: &MaskingPolicy) -> Result<Uuid> {
+    async fn create_policy(&self, policy: &MaskingPolicy) -> Result<Uuid> {
         let policy_id = Uuid::new_v4();
 
-        // TODO: Re-enable once sqlx query cache is fixed
-        /*
-        sqlx::query!(
+        // Create masking policy using raw query to avoid cache issues
+        sqlx::query(
             r#"
             INSERT INTO data_masking_policies (
                 id, name, description, table_name, column_name, masking_type, masking_config,
                 conditions, is_active, tenant_id, created_by, created_at
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
-            "#,
-            policy_id,
-            policy.name,
-            policy.description,
-            policy.table_name,
-            policy.column_name,
-            serde_json::to_string(&policy.masking_type).unwrap(),
-            serde_json::to_value(&policy.masking_config).unwrap(),
-            policy.conditions.as_ref().map(|c| serde_json::to_value(c).unwrap()),
-            policy.is_active,
-            policy.tenant_id,
-            policy.created_by
+            "#
         )
+        .bind(policy_id)
+        .bind(&policy.name)
+        .bind(&policy.description)
+        .bind(&policy.table_name)
+        .bind(&policy.column_name)
+        .bind(serde_json::to_string(&policy.masking_type).unwrap())
+        .bind(serde_json::to_value(&policy.masking_config).unwrap())
+        .bind(policy.conditions.as_ref().map(|c| serde_json::to_value(c).unwrap()))
+        .bind(policy.is_active)
+        .bind(policy.tenant_id)
+        .bind(policy.created_by)
         .execute(&self.pool)
         .await?;
-        */
 
         Ok(policy_id)
     }
 
-    async fn update_policy(&self, _policy: &MaskingPolicy) -> Result<()> {
-        // TODO: Re-enable once sqlx query cache is fixed
-        /*
-        sqlx::query!(
+    async fn update_policy(&self, policy: &MaskingPolicy) -> Result<()> {
+        // Update masking policy using raw query to avoid cache issues
+        sqlx::query(
             r#"
             UPDATE data_masking_policies SET
                 name = $2,
@@ -846,26 +1062,23 @@ impl DataMasking for DataMaskingService {
                 modified_by = $8,
                 modified_at = NOW()
             WHERE id = $1
-            "#,
-            policy.id,
-            policy.name,
-            policy.description,
-            serde_json::to_string(&policy.masking_type).unwrap(),
-            serde_json::to_value(&policy.masking_config).unwrap(),
-            policy.conditions.as_ref().map(|c| serde_json::to_value(c).unwrap()),
-            policy.is_active,
-            policy.modified_by
+            "#
         )
+        .bind(policy.id)
+        .bind(&policy.name)
+        .bind(&policy.description)
+        .bind(serde_json::to_string(&policy.masking_type).unwrap())
+        .bind(serde_json::to_value(&policy.masking_config).unwrap())
+        .bind(policy.conditions.as_ref().map(|c| serde_json::to_value(c).unwrap()))
+        .bind(policy.is_active)
+        .bind(policy.modified_by)
         .execute(&self.pool)
         .await?;
-        */
 
-        // Clear cache
+        // Clear cache for the updated policy's table
         {
             let mut cache = self.policy_cache.write().unwrap();
-            // TODO: Fix when policy parameter is re-enabled
-            // cache.remove(&policy.table_name);
-            cache.clear(); // Temporary: clear all cache entries
+            cache.remove(&policy.table_name);
         }
 
         Ok(())
@@ -880,56 +1093,38 @@ impl DataMasking for DataMaskingService {
             }
         }
 
-        // TODO: Re-enable once sqlx query cache is fixed
-        /*
-        let policy_records = sqlx::query!(
+        // Load table policies from database using raw query to avoid cache issues
+        let policy_records = sqlx::query(
             r#"
             SELECT id, name, description, column_name, masking_type, masking_config,
                    conditions, is_active, created_by, created_at, modified_by, modified_at
             FROM data_masking_policies
             WHERE table_name = $1 AND tenant_id = $2 AND is_active = true
-            "#,
-            table_name,
-            tenant_id
+            "#
         )
+        .bind(table_name)
+        .bind(tenant_id)
         .fetch_all(&self.pool)
         .await?;
-        */
-        #[derive(Debug)]
-        struct PolicyRecord {
-            id: Uuid,
-            name: String,
-            description: Option<String>,
-            column_name: String,
-            masking_type: String,
-            masking_config: serde_json::Value,
-            conditions: Option<serde_json::Value>,
-            is_active: bool,
-            created_by: Uuid,
-            created_at: chrono::DateTime<chrono::Utc>,
-            modified_by: Option<Uuid>,
-            modified_at: Option<chrono::DateTime<chrono::Utc>>,
-        }
-        let policy_records: Vec<PolicyRecord> = vec![]; // Temporary placeholder
 
         let mut policies = Vec::new();
         for record in policy_records {
             let policy = MaskingPolicy {
-                id: record.id,
-                name: record.name,
-                description: record.description.unwrap_or_default(),
+                id: record.try_get("id").unwrap_or(Uuid::nil()),
+                name: record.try_get::<String, _>("name").unwrap_or_default(),
+                description: record.try_get::<Option<String>, _>("description").unwrap_or_default().unwrap_or_default(),
                 table_name: table_name.to_string(),
-                column_name: record.column_name,
-                masking_type: serde_json::from_str(&record.masking_type).unwrap_or(MaskingType::Redaction),
-                masking_config: serde_json::from_value(record.masking_config).unwrap_or_default(),
-                conditions: record.conditions.and_then(|c| serde_json::from_value(c).ok()),
+                column_name: record.try_get::<String, _>("column_name").unwrap_or_default(),
+                masking_type: serde_json::from_str(&record.try_get::<String, _>("masking_type").unwrap_or_default()).unwrap_or(MaskingType::Redaction),
+                masking_config: serde_json::from_value(record.try_get::<serde_json::Value, _>("masking_config").unwrap_or_default()).unwrap_or_default(),
+                conditions: record.try_get::<Option<serde_json::Value>, _>("conditions").unwrap_or_default().and_then(|c| serde_json::from_value(c).ok()),
                 exemptions: None,
-                is_active: record.is_active,
+                is_active: record.try_get("is_active").unwrap_or(false),
                 tenant_id,
-                created_by: record.created_by,
-                created_at: record.created_at,
-                modified_by: record.modified_by.unwrap_or(record.created_by),
-                modified_at: record.modified_at.unwrap_or(record.created_at),
+                created_by: record.try_get("created_by").unwrap_or(Uuid::nil()),
+                created_at: record.try_get("created_at").unwrap_or_else(|_| chrono::Utc::now()),
+                modified_by: record.try_get::<Option<Uuid>, _>("modified_by").unwrap_or_default().unwrap_or_else(|| record.try_get("created_by").unwrap_or(Uuid::nil())),
+                modified_at: record.try_get::<Option<chrono::DateTime<chrono::Utc>>, _>("modified_at").unwrap_or_default().unwrap_or_else(|| record.try_get("created_at").unwrap_or_else(|_| chrono::Utc::now())),
             };
             policies.push(policy);
         }

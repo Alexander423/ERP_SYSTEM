@@ -475,18 +475,69 @@ mod tests {
         assert!(config.send_welcome_email);
     }
 
-    #[allow(dead_code)]
-    struct MockJobQueue;
+    /// Mock job queue for email verification testing - tracks queued jobs in memory
+    pub struct MockJobQueue {
+        pub queued_jobs: std::sync::Arc<std::sync::Mutex<Vec<erp_core::jobs::types::QueuedJob>>>,
+        pub job_counter: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    }
+
     impl MockJobQueue {
-        #[allow(dead_code)]
-        fn new() -> Self { Self }
+        pub fn new() -> Self {
+            Self {
+                queued_jobs: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+                job_counter: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            }
+        }
+
+        /// Get all queued email jobs for testing verification
+        pub fn get_queued_jobs(&self) -> Vec<erp_core::jobs::types::QueuedJob> {
+            self.queued_jobs.lock().unwrap().clone()
+        }
+
+        /// Get only verification email jobs
+        pub fn get_verification_emails(&self) -> Vec<erp_core::jobs::types::QueuedJob> {
+            self.queued_jobs.lock().unwrap()
+                .iter()
+                .filter(|job| job.data.contains("verification"))
+                .cloned()
+                .collect()
+        }
+
+        /// Get only welcome email jobs
+        pub fn get_welcome_emails(&self) -> Vec<erp_core::jobs::types::QueuedJob> {
+            self.queued_jobs.lock().unwrap()
+                .iter()
+                .filter(|job| job.data.contains("welcome"))
+                .cloned()
+                .collect()
+        }
+
+        /// Clear all queued jobs for test isolation
+        pub fn clear_jobs(&self) {
+            self.queued_jobs.lock().unwrap().clear();
+        }
+
+        /// Get the number of jobs that have been queued
+        pub fn job_count(&self) -> u64 {
+            self.job_counter.load(std::sync::atomic::Ordering::SeqCst)
+        }
     }
     
     #[async_trait::async_trait]
     impl JobQueue for MockJobQueue {
-        async fn enqueue(&self, _job: erp_core::jobs::types::QueuedJob) -> Result<erp_core::jobs::JobId> {
+        async fn enqueue(&self, job: erp_core::jobs::types::QueuedJob) -> Result<erp_core::jobs::JobId> {
             use erp_core::jobs::JobId;
-            Ok(JobId("mock-job-id".to_string()))
+
+            // Store the job in our mock queue
+            {
+                let mut jobs = self.queued_jobs.lock().unwrap();
+                jobs.push(job);
+            }
+
+            // Increment the job counter
+            let job_num = self.job_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
+            Ok(JobId(format!("mock-email-job-{}", job_num)))
         }
         
         async fn dequeue(&self, _queue: &str) -> Result<Option<erp_core::jobs::types::QueuedJob>> {

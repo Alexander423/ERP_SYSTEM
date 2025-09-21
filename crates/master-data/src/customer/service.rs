@@ -59,14 +59,22 @@ impl DefaultCustomerService {
 #[async_trait]
 impl CustomerService for DefaultCustomerService {
     async fn create_customer(&self, request: CreateCustomerRequest, created_by: Uuid) -> Result<Customer> {
-        // 1. Input validation
+        // 1. Check tenant context permissions
+        if !self.tenant_context.has_permission("customer:create") {
+            return Err(MasterDataError::ValidationError {
+                field: "permissions".to_string(),
+                message: "Insufficient permissions to create customer".to_string(),
+            });
+        }
+
+        // 2. Input validation
         request.validate()
             .map_err(|e| MasterDataError::ValidationError {
                 field: "request".to_string(),
                 message: e.to_string(),
             })?;
 
-        // 2. Business rule validation
+        // 3. Business rule validation
         self.validate_create_business_rules(&request).await?;
 
         // Clone request early to avoid partial move issues

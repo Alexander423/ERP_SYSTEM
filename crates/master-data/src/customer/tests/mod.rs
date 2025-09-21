@@ -12,9 +12,8 @@ pub mod performance_tests;
 pub mod security_tests;
 */
 
-use sqlx::{PgPool, Pool, Postgres};
+use sqlx::PgPool;
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
 use crate::customer::*;
 use crate::types::*;
 use erp_core::TenantId;
@@ -99,7 +98,7 @@ pub async fn create_test_pool() -> PgPool {
     let database_url = std::env::var("DATABASE_URL")
         .unwrap_or_else(|_| "postgresql://erp_admin:erp_secure_password_change_in_production@localhost:5432/erp_main".to_string());
 
-    Pool::connect(&database_url)
+    PgPool::connect(&database_url)
         .await
         .expect("Failed to connect to test database")
 }

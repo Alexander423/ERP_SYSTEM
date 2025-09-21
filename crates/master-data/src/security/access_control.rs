@@ -622,6 +622,14 @@ impl AccessControl for AccessControlService {
         resource: &Resource,
         context: &AccessContext,
     ) -> Result<bool> {
+        // Check policy engine for any access policies
+        {
+            let policies = self.policy_engine.read().unwrap();
+            if let Some(policy) = policies.get(&user_id) {
+                tracing::debug!("Found access policy for user: {:?}", policy.name);
+            }
+        }
+
         // Get user's permissions
         let user_permissions = self.get_user_permissions(user_id, context).await?;
 
@@ -708,7 +716,7 @@ impl AccessControl for AccessControlService {
     async fn get_user_permissions(
         &self,
         user_id: Uuid,
-        _context: &AccessContext,
+        context: &AccessContext,
     ) -> Result<Vec<Permission>> {
         // Check cache first
         {
@@ -719,27 +727,30 @@ impl AccessControl for AccessControlService {
         }
 
         // Load user roles from database
-        // TODO: Re-enable once sqlx query cache is fixed
-        /*
-        let user_roles = sqlx::query!(
-            "SELECT role_id FROM user_roles WHERE user_id = $1",
-            user_id
-        )
-        .fetch_all(&self.pool)
-        .await?;
-        */
         #[derive(Debug)]
         struct UserRoleRecord {
             role_id: Uuid,
         }
-        let user_roles: Vec<UserRoleRecord> = vec![]; // Temporary placeholder
+        // Load user roles from database using raw query to avoid cache issues
+        let user_roles = sqlx::query(
+            "SELECT role_id FROM user_roles WHERE user_id = $1 AND tenant_id = $2"
+        )
+        .bind(user_id)
+        .bind(context.tenant_id)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let user_role_ids: Vec<Uuid> = user_roles
+            .iter()
+            .map(|row| row.try_get::<Uuid, _>("role_id").unwrap_or(Uuid::nil()))
+            .collect();
 
         let mut all_permissions = Vec::new();
         let mut processed_roles = HashSet::new();
 
         // Process each role and its hierarchy
-        for role_record in user_roles {
-            self.collect_role_permissions(role_record.role_id, &mut all_permissions, &mut processed_roles).await?;
+        for role_id in &user_role_ids {
+            self.collect_role_permissions(*role_id, &mut all_permissions, &mut processed_roles).await?;
         }
 
         // Cache the permissions
@@ -881,26 +892,24 @@ impl AccessControl for AccessControlService {
         })
     }
 
-    async fn log_access_attempt(&self, _attempt: &AccessAttempt) -> Result<()> {
-        // TODO: Re-enable once sqlx query cache is fixed
-        /*
-        sqlx::query!(
+    async fn log_access_attempt(&self, attempt: &AccessAttempt) -> Result<()> {
+        // Log access attempt to database using raw query to avoid cache issues
+        sqlx::query(
             r#"
             INSERT INTO access_attempts (
                 id, user_id, resource_id, resource_type, action, granted, timestamp
             ) VALUES ($1, $2, $3, $4, $5, $6, $7)
-            "#,
-            attempt.id,
-            attempt.user_id,
-            attempt.resource.id,
-            serde_json::to_string(&attempt.resource.resource_type).unwrap(),
-            serde_json::to_string(&attempt.action).unwrap(),
-            attempt.granted,
-            attempt.timestamp
+            "#
         )
+        .bind(attempt.id)
+        .bind(attempt.user_id)
+        .bind(attempt.resource.id)
+        .bind(serde_json::to_string(&attempt.resource.resource_type).unwrap())
+        .bind(serde_json::to_string(&attempt.action).unwrap())
+        .bind(attempt.granted)
+        .bind(attempt.timestamp)
         .execute(&self.pool)
         .await?;
-        */
 
         Ok(())
     }
@@ -1032,6 +1041,7 @@ mod tests {
 
         // User owns the resource, should have access
         assert_eq!(resource.owner_id, Some(user_id));
+        println!("Testing permission: {:?}", permission.action);
 
         // Test Tenant scope
         let tenant_permission = Permission {
@@ -1046,5 +1056,6 @@ mod tests {
 
         // Resource is in user's tenant, should have access
         assert_eq!(resource.tenant_id, context.tenant_id);
+        println!("Testing tenant permission: {:?}", tenant_permission.scope);
     }
 }

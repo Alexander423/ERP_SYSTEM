@@ -69,6 +69,7 @@ use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
 mod error;
+mod error_handler;
 mod handlers;
 mod health;
 mod api_middleware;
@@ -285,9 +286,13 @@ fn create_app(state: AppState, _auth_service: Arc<AuthService>) -> Result<Router
 fn create_api_routes() -> Router<AppState> {
     Router::new()
         .nest("/auth", auth::auth_routes())
-        .nest("/users", users::user_routes())
-        .nest("/roles", roles::role_routes())
-        .nest("/customers", customers::customer_routes())
+        // Protected routes that require tenant context
+        .nest("/users", users::user_routes()
+            .layer(axum::middleware::from_fn(api_middleware::tenant_context::require_tenant_context)))
+        .nest("/roles", roles::role_routes()
+            .layer(axum::middleware::from_fn(api_middleware::tenant_context::require_tenant_context)))
+        .nest("/customers", customers::customer_routes()
+            .layer(axum::middleware::from_fn(api_middleware::tenant_context::require_tenant_context)))
 }
 
 async fn handler_404() -> impl IntoResponse {

@@ -9,11 +9,19 @@ use crate::DockerCommands;
 
 pub async fn execute_docker_command(cmd: DockerCommands) -> Result<()> {
     match cmd {
-        DockerCommands::Start { services, detach } => {
-            start_services(services, detach).await
+        DockerCommands::Start { service, services, detach } => {
+            let mut all_services = services;
+            if let Some(s) = service {
+                all_services.push(s);
+            }
+            start_services(all_services, detach).await
         }
-        DockerCommands::Stop { services, force } => {
-            stop_services(services, force).await
+        DockerCommands::Stop { service, services, force } => {
+            let mut all_services = services;
+            if let Some(s) = service {
+                all_services.push(s);
+            }
+            stop_services(all_services, force).await
         }
         DockerCommands::Restart { services } => {
             restart_services(services).await
@@ -21,11 +29,11 @@ pub async fn execute_docker_command(cmd: DockerCommands) -> Result<()> {
         DockerCommands::Status { format } => {
             show_status(&format).await
         }
-        DockerCommands::Logs { service, follow, lines } => {
-            show_logs(&service, follow, lines).await
+        DockerCommands::Logs { service, follow } => {
+            show_logs(&service, follow).await
         }
-        DockerCommands::Update { force, services } => {
-            update_services(services, force).await
+        DockerCommands::Update { force } => {
+            update_services(force).await
         }
     }
 }
@@ -224,10 +232,12 @@ async fn show_status(format: &str) -> Result<()> {
     Ok(())
 }
 
-async fn show_logs(service: &str, follow: bool, lines: usize) -> Result<()> {
+async fn show_logs(service: &str, follow: bool) -> Result<()> {
     println!("{}", format!("📋 Showing logs for service: {}", service).blue().bold());
 
     check_docker_running().await?;
+
+    let lines = 100; // Default number of lines to show
 
     let mut cmd = Command::new("docker-compose");
     cmd.arg("logs");
@@ -265,16 +275,12 @@ async fn show_logs(service: &str, follow: bool, lines: usize) -> Result<()> {
     Ok(())
 }
 
-async fn update_services(services: Vec<String>, force: bool) -> Result<()> {
+async fn update_services(force: bool) -> Result<()> {
     println!("{}", "📦 Updating container images...".blue().bold());
 
     check_docker_running().await?;
 
-    let services_to_update = if services.is_empty() {
-        vec!["postgres".to_string(), "redis".to_string(), "erp-server".to_string()]
-    } else {
-        services
-    };
+    let services_to_update = vec!["postgres".to_string(), "redis".to_string(), "erp-server".to_string()];
 
     if !force {
         use dialoguer::Confirm;

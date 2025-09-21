@@ -2,9 +2,9 @@
 
 use anyhow::{anyhow, Result};
 use colored::*;
-use dialoguer::{Input, Password, Confirm};
+use dialoguer::{Password, Confirm};
 use serde_json::json;
-use sqlx::PgPool;
+use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use crate::{TenantCommands, config::Config};
@@ -27,11 +27,11 @@ pub async fn execute_tenant_command(
         TenantCommands::List { format, include_inactive } => {
             list_tenants(&pool, &format, include_inactive).await
         }
-        TenantCommands::Show { tenant, format } => {
-            show_tenant(&pool, &tenant, &format).await
+        TenantCommands::Show { tenant } => {
+            show_tenant(&pool, &tenant, "table").await
         }
-        TenantCommands::Update { tenant, name, status } => {
-            update_tenant(&pool, &tenant, name, status).await
+        TenantCommands::Update { tenant, name, email } => {
+            update_tenant(&pool, &tenant, name, email).await
         }
         TenantCommands::Delete { tenant, force, keep_schema } => {
             delete_tenant(&pool, &tenant, force, keep_schema).await
@@ -130,7 +130,7 @@ async fn create_tenant(
 
     // Create schema
     // Use relative paths from project root
-    let schema_sql = include_str!("../../../migrations/002_tenant_schema_template.sql");
+    let schema_sql = include_str!("../../../../migrations/002_tenant_schema_template.sql");
     let processed_sql = schema_sql.replace("{TENANT_SCHEMA}", &schema_name);
 
     sqlx::raw_sql(&processed_sql)
@@ -138,7 +138,7 @@ async fn create_tenant(
         .await?;
 
     // Seed default roles
-    let roles_sql = include_str!("../../../migrations/seeds/001_default_roles.sql");
+    let roles_sql = include_str!("../../../../migrations/seeds/001_default_roles.sql");
     let processed_roles = roles_sql.replace("{TENANT_SCHEMA}", &schema_name);
 
     sqlx::raw_sql(&processed_roles)
@@ -146,7 +146,7 @@ async fn create_tenant(
         .await?;
 
     // Seed reference data
-    let ref_data_sql = include_str!("../../../migrations/seeds/002_reference_data.sql");
+    let ref_data_sql = include_str!("../../../../migrations/seeds/002_reference_data.sql");
     let processed_ref_data = ref_data_sql
         .replace("{TENANT_SCHEMA}", &schema_name)
         .replace("{TENANT_NAME}", &name)
@@ -157,7 +157,7 @@ async fn create_tenant(
         .await?;
 
     // Create admin user
-    let admin_sql = include_str!("../../../migrations/seeds/003_admin_user.sql");
+    let admin_sql = include_str!("../../../../migrations/seeds/003_admin_user.sql");
     let processed_admin = admin_sql
         .replace("{TENANT_SCHEMA}", &schema_name)
         .replace("{TENANT_ID}", &tenant_id.to_string())
@@ -331,12 +331,12 @@ async fn update_tenant(
     pool: &PgPool,
     tenant: &str,
     name: Option<String>,
-    status: Option<String>,
+    email: Option<String>,
 ) -> Result<()> {
-    // Validate status if provided
-    if let Some(ref status) = status {
-        if !["active", "suspended", "inactive", "deleted"].contains(&status.as_str()) {
-            return Err(anyhow!("Invalid status. Must be one of: active, suspended, inactive, deleted"));
+    // Validate email if provided
+    if let Some(ref email) = email {
+        if !email.contains('@') {
+            return Err(anyhow!("Invalid email format"));
         }
     }
 
@@ -351,7 +351,7 @@ async fn update_tenant(
 
     // Build update query
     let mut updates = Vec::new();
-    let mut params: Vec<&(dyn sqlx::Encode<sqlx::Postgres> + sqlx::Type<sqlx::Postgres> + Sync)> = Vec::new();
+    let mut params: Vec<&dyn std::fmt::Display> = Vec::new();
     let mut param_count = 1;
 
     if let Some(ref new_name) = name {
@@ -360,9 +360,9 @@ async fn update_tenant(
         param_count += 1;
     }
 
-    if let Some(ref new_status) = status {
-        updates.push(format!("status = ${}", param_count));
-        params.push(new_status);
+    if let Some(ref new_email) = email {
+        updates.push(format!("admin_email = ${}", param_count));
+        params.push(new_email);
         param_count += 1;
     }
 
@@ -378,13 +378,12 @@ async fn update_tenant(
         param_count
     );
 
-    params.push(&tenant_data.id);
-
-    // Execute update
+    // Execute update with proper type handling
     let mut query_builder = sqlx::query(&query);
     for param in params {
-        query_builder = query_builder.bind(param);
+        query_builder = query_builder.bind(param.to_string());
     }
+    query_builder = query_builder.bind(tenant_data.id);
 
     let result = query_builder.execute(pool).await?;
 

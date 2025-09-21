@@ -403,9 +403,21 @@ impl CustomerRepository for PostgresCustomerRepository {
 
         tx.commit().await?;
 
-        // Load and return the created customer
-        self.get_customer_by_id(customer_id).await?
-            .ok_or(MasterDataError::CustomerNotFound { id: customer_id.to_string() })
+        // Load and return the created customer with performance metrics
+        let mut customer = self.get_customer_by_id(customer_id).await?
+            .ok_or(MasterDataError::CustomerNotFound { id: customer_id.to_string() })?;
+
+        // Load performance metrics if available
+        if let Some(metrics) = self.get_performance_metrics(customer_id).await? {
+            customer.performance_metrics = metrics;
+        }
+
+        // Load behavioral data if available
+        if let Some(behavioral) = self.get_behavioral_data(customer_id).await? {
+            customer.behavioral_data = behavioral;
+        }
+
+        Ok(customer)
     }
 
     async fn get_customer_by_id(&self, id: Uuid) -> Result<Option<Customer>> {
@@ -528,29 +540,246 @@ impl CustomerRepository for PostgresCustomerRepository {
         })
     }
 
-    async fn get_customer_hierarchy(&self, _customer_id: Uuid) -> Result<Vec<Customer>> {
-        // TODO: Implement hierarchy query
-        Ok(vec![])
+    async fn get_customer_hierarchy(&self, customer_id: Uuid) -> Result<Vec<Customer>> {
+        // Get all customers in the hierarchy tree starting from the given customer
+        let rows = sqlx::query(
+            r#"
+            WITH RECURSIVE customer_hierarchy AS (
+                -- Base case: find the root customer or start from given customer
+                SELECT id, customer_number, legal_name, parent_customer_id,
+                       customer_hierarchy_level, 0 as depth
+                FROM customers
+                WHERE id = $1 AND tenant_id = $2 AND is_deleted = false
+
+                UNION ALL
+
+                -- Recursive case: find all children
+                SELECT c.id, c.customer_number, c.legal_name, c.parent_customer_id,
+                       c.customer_hierarchy_level, ch.depth + 1
+                FROM customers c
+                INNER JOIN customer_hierarchy ch ON c.parent_customer_id = ch.id
+                WHERE c.tenant_id = $2 AND c.is_deleted = false
+                AND ch.depth < 10  -- Prevent infinite recursion
+            )
+            SELECT id FROM customer_hierarchy
+            ORDER BY depth, customer_hierarchy_level, legal_name
+            "#,
+        )
+        .bind(customer_id)
+        .bind(self.tenant_context.tenant_id.0)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut hierarchy = Vec::new();
+        for row in rows {
+            let id: Uuid = row.try_get("id")?;
+            if let Some(customer) = self.load_customer_from_db(id, false).await? {
+                hierarchy.push(customer);
+            }
+        }
+        Ok(hierarchy)
     }
 
-    async fn get_customers_by_corporate_group(&self, _group_id: Uuid) -> Result<Vec<Customer>> {
-        // TODO: Implement corporate group query
-        Ok(vec![])
+    async fn get_customers_by_corporate_group(&self, group_id: Uuid) -> Result<Vec<Customer>> {
+        // Find all customers belonging to the same corporate group
+        let rows = sqlx::query(
+            r#"
+            SELECT id
+            FROM customers
+            WHERE corporate_group_id = $1 AND tenant_id = $2 AND is_deleted = false
+            ORDER BY legal_name
+            "#,
+        )
+        .bind(group_id)
+        .bind(self.tenant_context.tenant_id.0)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut customers = Vec::new();
+        for row in rows {
+            let id: Uuid = row.try_get("id")?;
+            if let Some(customer) = self.load_customer_from_db(id, false).await? {
+                customers.push(customer);
+            }
+        }
+        Ok(customers)
     }
 
-    async fn get_customer_addresses(&self, _customer_id: Uuid) -> Result<Vec<Address>> {
-        // TODO: Implement address loading
-        Ok(vec![])
+    async fn get_customer_addresses(&self, customer_id: Uuid) -> Result<Vec<Address>> {
+        // Load all addresses for a customer from the customer_addresses table
+        let rows = sqlx::query(
+            r#"
+            SELECT ca.address_id, ca.address_type, ca.is_primary,
+                   a.street_address, a.city, a.state_province, a.postal_code,
+                   a.country_code, a.address_type as addr_type, a.latitude, a.longitude
+            FROM customer_addresses ca
+            INNER JOIN addresses a ON ca.address_id = a.id
+            WHERE ca.customer_id = $1 AND ca.tenant_id = $2
+            ORDER BY ca.is_primary DESC, ca.address_type
+            "#,
+        )
+        .bind(customer_id)
+        .bind(self.tenant_context.tenant_id.0)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut addresses = Vec::new();
+        for row in rows {
+            let address = Address {
+                id: row.try_get("address_id")?,
+                entity_type: "customer".to_string(),
+                entity_id: customer_id,
+                address_type: row.try_get::<AddressType, _>("addr_type").unwrap_or(AddressType::Business),
+                street_line_1: row.try_get("street_address")?,
+                street_line_2: None,
+                city: row.try_get("city")?,
+                state_province: row.try_get::<Option<String>, _>("state_province")?,
+                postal_code: row.try_get("postal_code")?,
+                country_code: row.try_get("country_code")?,
+                coordinates: None, // Would need to construct from lat/lng if available
+                is_primary: row.try_get::<bool, _>("is_primary").unwrap_or(false),
+                is_active: true,
+                audit: AuditFields {
+                    created_by: uuid::Uuid::new_v4(),
+                    created_at: chrono::Utc::now(),
+                    modified_by: uuid::Uuid::new_v4(),
+                    modified_at: chrono::Utc::now(),
+                    version: 1,
+                    is_deleted: false,
+                    deleted_at: None,
+                    deleted_by: None,
+                },
+            };
+            addresses.push(address);
+        }
+        Ok(addresses)
     }
 
-    async fn get_customer_contacts(&self, _customer_id: Uuid) -> Result<Vec<ContactInfo>> {
-        // TODO: Implement contact loading
-        Ok(vec![])
+    async fn get_customer_contacts(&self, customer_id: Uuid) -> Result<Vec<ContactInfo>> {
+        // Load all contacts for a customer from the customer_contacts table
+        let rows = sqlx::query(
+            r#"
+            SELECT cc.contact_id, cc.contact_type, cc.is_primary,
+                   c.first_name, c.last_name, c.email, c.phone, c.job_title,
+                   c.department, c.is_decision_maker, c.preferred_contact_method
+            FROM customer_contacts cc
+            INNER JOIN contacts c ON cc.contact_id = c.id
+            WHERE cc.customer_id = $1 AND cc.tenant_id = $2
+            ORDER BY cc.is_primary DESC, c.last_name, c.first_name
+            "#,
+        )
+        .bind(customer_id)
+        .bind(self.tenant_context.tenant_id.0)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut contacts = Vec::new();
+        for row in rows {
+            let contact = ContactInfo {
+                id: row.try_get("contact_id")?,
+                entity_type: "customer".to_string(),
+                entity_id: customer_id,
+                contact_type: row.try_get::<ContactType, _>("contact_type").unwrap_or(ContactType::Primary),
+                first_name: row.try_get("first_name")?,
+                last_name: row.try_get("last_name")?,
+                title: row.try_get::<Option<String>, _>("job_title")?,
+                department: row.try_get::<Option<String>, _>("department")?,
+                email: row.try_get::<Option<String>, _>("email")?,
+                phone: row.try_get::<Option<String>, _>("phone")?,
+                mobile: None,
+                fax: None,
+                website: None,
+                social_media_accounts: HashMap::new(),
+                preferred_language: None,
+                timezone: None,
+                notes: None,
+                tags: vec![],
+                is_primary: row.try_get::<bool, _>("is_primary").unwrap_or(false),
+                is_active: true,
+                audit: AuditFields {
+                    created_by: uuid::Uuid::new_v4(),
+                    created_at: chrono::Utc::now(),
+                    modified_by: uuid::Uuid::new_v4(),
+                    modified_at: chrono::Utc::now(),
+                    version: 1,
+                    is_deleted: false,
+                    deleted_at: None,
+                    deleted_by: None,
+                },
+            };
+            contacts.push(contact);
+        }
+        Ok(contacts)
     }
 
-    async fn search_customers(&self, _criteria: &CustomerSearchCriteria) -> Result<Vec<Customer>> {
-        // TODO: Implement full text search
-        Ok(vec![])
+    async fn search_customers(&self, criteria: &CustomerSearchCriteria) -> Result<Vec<Customer>> {
+        let mut query_builder = sqlx::QueryBuilder::new(
+            "SELECT id FROM customers WHERE tenant_id = "
+        );
+        query_builder.push_bind(self.tenant_context.tenant_id.0);
+        query_builder.push(" AND is_deleted = false");
+
+        // Add search term filter
+        if let Some(search_term) = &criteria.search_term {
+            query_builder.push(" AND (");
+            query_builder.push("legal_name ILIKE ");
+            query_builder.push_bind(format!("%{}%", search_term));
+            query_builder.push(" OR customer_number ILIKE ");
+            query_builder.push_bind(format!("%{}%", search_term));
+            query_builder.push(" OR notes ILIKE ");
+            query_builder.push_bind(format!("%{}%", search_term));
+            query_builder.push(")");
+        }
+
+        // Add customer type filter
+        if let Some(customer_types) = &criteria.customer_types {
+            if !customer_types.is_empty() {
+                query_builder.push(" AND customer_type = ANY(");
+                query_builder.push_bind(customer_types);
+                query_builder.push(")");
+            }
+        }
+
+        // Add status filter
+        if let Some(statuses) = &criteria.statuses {
+            if !statuses.is_empty() {
+                query_builder.push(" AND status = ANY(");
+                query_builder.push_bind(statuses);
+                query_builder.push(")");
+            }
+        }
+
+        // Add lifecycle stage filter
+        if let Some(lifecycle_stages) = &criteria.lifecycle_stages {
+            if !lifecycle_stages.is_empty() {
+                query_builder.push(" AND lifecycle_stage = ANY(");
+                query_builder.push_bind(lifecycle_stages);
+                query_builder.push(")");
+            }
+        }
+
+        query_builder.push(" ORDER BY legal_name");
+
+        // Add pagination if specified
+        if let (Some(page), Some(page_size)) = (criteria.page, criteria.page_size) {
+            let offset = (page.saturating_sub(1)) * page_size;
+            query_builder.push(" LIMIT ");
+            query_builder.push_bind(page_size as i64);
+            query_builder.push(" OFFSET ");
+            query_builder.push_bind(offset as i64);
+        }
+
+        let query = query_builder.build();
+        let rows = query.fetch_all(&self.pool).await?;
+
+        let mut customers = Vec::new();
+        for row in rows {
+            let id: Uuid = row.try_get("id")?;
+            if let Some(customer) = self.load_customer_from_db(id, false).await? {
+                customers.push(customer);
+            }
+        }
+        Ok(customers)
     }
 
     async fn is_customer_number_available(&self, customer_number: &str) -> Result<bool> {

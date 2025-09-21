@@ -89,8 +89,8 @@ fn is_root() -> bool {
                 return false;
             }
 
-            let mut elevation: u32 = 0;
-            let mut size = std::mem::size_of::<u32>() as u32;
+            let mut elevation = TOKEN_ELEVATION { TokenIsElevated: 0 };
+            let mut size = std::mem::size_of::<TOKEN_ELEVATION>() as u32;
 
             let result = GetTokenInformation(
                 token_handle,
@@ -102,7 +102,7 @@ fn is_root() -> bool {
 
             CloseHandle(token_handle);
 
-            result != 0 && elevation != 0
+            result != 0 && elevation.TokenIsElevated != 0
         }
     }
 }
@@ -146,22 +146,54 @@ fn command_exists(cmd: &str) -> bool {
         .unwrap_or(false)
 }
 
+#[cfg(unix)]
 fn get_available_disk_space(path: &str) -> Result<u64> {
     use std::ffi::CString;
     use std::mem;
 
     let path_c = CString::new(path)?;
-    let mut statvfs: libc::statvfs = unsafe { mem::zeroed() };
+    let mut stat: libc::statvfs = unsafe { mem::zeroed() };
 
-    let result = unsafe { libc::statvfs(path_c.as_ptr(), &mut statvfs) };
+    let result = unsafe { libc::statvfs(path_c.as_ptr(), &mut stat) };
 
     if result == 0 {
-        Ok(statvfs.f_bavail * statvfs.f_frsize)
+        Ok(stat.f_bavail * stat.f_frsize)
     } else {
         Err(anyhow!("Failed to get disk space information"))
     }
 }
 
+#[cfg(windows)]
+fn get_available_disk_space(path: &str) -> Result<u64> {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+    use winapi::um::fileapi::GetDiskFreeSpaceExW;
+
+    let wide_path: Vec<u16> = OsStr::new(path)
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+
+    let mut free_bytes: winapi::shared::ntdef::ULARGE_INTEGER = unsafe { std::mem::zeroed() };
+    let mut total_bytes: winapi::shared::ntdef::ULARGE_INTEGER = unsafe { std::mem::zeroed() };
+
+    let result = unsafe {
+        GetDiskFreeSpaceExW(
+            wide_path.as_ptr(),
+            &mut free_bytes,
+            &mut total_bytes,
+            std::ptr::null_mut(),
+        )
+    };
+
+    if result != 0 {
+        Ok(unsafe { *free_bytes.QuadPart() } as u64)
+    } else {
+        Err(anyhow!("Failed to get disk space information"))
+    }
+}
+
+#[cfg(unix)]
 fn get_available_memory() -> Result<u64> {
     let output = Command::new("free")
         .arg("-b")
@@ -179,6 +211,22 @@ fn get_available_memory() -> Result<u64> {
     }
 
     Err(anyhow!("Failed to parse memory information"))
+}
+
+#[cfg(windows)]
+fn get_available_memory() -> Result<u64> {
+    use winapi::um::sysinfoapi::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
+
+    let mut status: MEMORYSTATUSEX = unsafe { std::mem::zeroed() };
+    status.dwLength = std::mem::size_of::<MEMORYSTATUSEX>() as u32;
+
+    let result = unsafe { GlobalMemoryStatusEx(&mut status) };
+
+    if result != 0 {
+        Ok(status.ullAvailPhys)
+    } else {
+        Err(anyhow!("Failed to get memory information"))
+    }
 }
 
 async fn download_install_script() -> Result<()> {

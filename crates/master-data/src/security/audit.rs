@@ -438,7 +438,7 @@ impl SecurityAuditService {
     }
 
     /// Calculate risk score based on event characteristics
-    fn calculate_risk_score(&self, event: &AuditEvent) -> f64 {
+    pub fn calculate_risk_score(&self, event: &AuditEvent) -> f64 {
         let mut score: f64 = 0.0;
 
         // Base score by event type
@@ -469,7 +469,7 @@ impl SecurityAuditService {
     }
 
     /// Determine appropriate retention period
-    fn calculate_retention_period(&self, event: &AuditEvent) -> chrono::Duration {
+    pub fn calculate_retention_period(&self, event: &AuditEvent) -> chrono::Duration {
         let base_retention = match event.risk_level {
             RiskLevel::Critical => chrono::Duration::days(2555), // 7 years
             RiskLevel::High => chrono::Duration::days(1825),     // 5 years

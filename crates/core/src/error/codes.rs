@@ -146,6 +146,12 @@ impl ErrorCode {
 
             // 422 - Unprocessable Entity
             ErrorCode::ResourceInUse => 422,
+
+            // 404 - Not Found
+            ErrorCode::NotFound => 404,
+
+            // 501 - Not Implemented
+            ErrorCode::NotImplemented => 501,
         }
     }
 
@@ -206,6 +212,9 @@ impl ErrorCode {
             | ErrorCode::JobExecutionFailed
             | ErrorCode::JobTimeout
             | ErrorCode::JobDeserializationError => "jobs",
+
+            ErrorCode::NotFound => "resource",
+            ErrorCode::NotImplemented => "system",
         }
     }
 

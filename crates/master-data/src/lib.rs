@@ -4,6 +4,7 @@
 pub mod customer;
 pub mod supplier;
 pub mod product;
+pub mod inventory;
 pub mod location;
 pub mod organization;
 pub mod security;
@@ -18,6 +19,21 @@ pub use customer::{
     CreateCustomerRequest, UpdateCustomerRequest, CustomerSearchCriteria, CustomerSearchResponse,
     CustomerRepository, PostgresCustomerRepository,
     CustomerService, DefaultCustomerService,
+};
+
+pub use inventory::{
+    LocationInventory, InventoryMovement, StockTransfer, ReplenishmentRule,
+    InventoryAnalyticsMetrics, ABCXYZAnalysis,
+    InventoryService, DefaultInventoryService,
+    InventoryAnalyticsEngine, DefaultInventoryAnalyticsEngine,
+    InventoryOptimizationEngine, PostgresInventoryOptimizationEngine,
+    OptimizationResult, SupplyChainOptimization,
+};
+
+pub use product::{
+    Product, ProductType, ProductStatus, UnitOfMeasure,
+    ProductCategory, ProductPrice, ProductVariant, ProductSupplier,
+    CreateProductRequest, UpdateProductRequest, ProductSearchFilters,
 };
 
 #[cfg(feature = "axum")]

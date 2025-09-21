@@ -89,10 +89,10 @@ pub async fn execute_config_command(
             show_config(config, section.as_deref(), &format)
         }
         crate::ConfigCommands::Set { key, value, scope, tenant } => {
-            set_config(&key, &value, &scope, tenant.as_deref()).await
+            set_config(&key, &value, scope.as_deref().unwrap_or("global"), tenant.as_deref()).await
         }
         crate::ConfigCommands::Get { key, scope, tenant } => {
-            get_config(&key, &scope, tenant.as_deref()).await
+            get_config(&key, scope.as_deref().unwrap_or("global"), tenant.as_deref()).await
         }
         crate::ConfigCommands::Validate { file, detailed } => {
             validate_config(file.as_deref(), detailed)

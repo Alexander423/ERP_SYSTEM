@@ -118,7 +118,6 @@ pub struct SecurityHeadersConfig {
     pub permissions_policy: Option<String>,
     
     /// Enable secure cookies in development
-    #[allow(dead_code)]
     pub force_secure_cookies: bool,
 }
 
@@ -160,7 +159,6 @@ impl Default for SecurityHeadersConfig {
 
 impl SecurityHeadersConfig {
     /// Create a development-friendly configuration
-    #[allow(dead_code)]
     pub fn development() -> Self {
         Self {
             enable_hsts: false, // Don't enforce HTTPS in development
@@ -179,7 +177,6 @@ impl SecurityHeadersConfig {
     }
 
     /// Create a production configuration with strict security
-    #[allow(dead_code)]
     pub fn production() -> Self {
         Self {
             enable_hsts: true,
@@ -205,55 +202,65 @@ impl SecurityHeadersConfig {
 
 /// Security headers middleware
 #[derive(Clone)]
-#[allow(dead_code)]
 pub struct SecurityHeadersMiddleware {
     config: SecurityHeadersConfig,
 }
 
 impl SecurityHeadersMiddleware {
-    #[allow(dead_code)]
     pub fn new(config: SecurityHeadersConfig) -> Self {
         Self { config }
     }
 
-    #[allow(dead_code)]
     pub fn with_default_config() -> Self {
         Self::new(SecurityHeadersConfig::default())
     }
 
-    #[allow(dead_code)]
     pub fn for_development() -> Self {
         Self::new(SecurityHeadersConfig::development())
     }
 
-    #[allow(dead_code)]
     pub fn for_production() -> Self {
         Self::new(SecurityHeadersConfig::production())
     }
 
+    /// Create an axum layer for this middleware
+    pub fn layer(self) -> axum::middleware::FromFn<impl Fn(Request, Next) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Response, StatusCode>> + Send>>, Request> {
+        let config = self.config.clone();
+        axum::middleware::from_fn(move |request, next| {
+            let config = config.clone();
+            Box::pin(async move {
+                security_headers_middleware_with_config(request, next, config).await
+            }) as std::pin::Pin<Box<dyn std::future::Future<Output = Result<Response, StatusCode>> + Send>>
+        })
+    }
+
+    /// Get the current configuration
+    pub fn config(&self) -> &SecurityHeadersConfig {
+        &self.config
+    }
+
+    /// Update the configuration
+    pub fn with_config(mut self, config: SecurityHeadersConfig) -> Self {
+        self.config = config;
+        self
+    }
 }
 
-/// Middleware function that adds security headers to responses
+/// Middleware function that adds security headers to responses using default config
 pub async fn security_headers_middleware(
     request: Request,
     next: Next,
 ) -> Result<Response, StatusCode> {
-    // Get config from extensions (set during app setup)
-    let config = request
-        .extensions()
-        .get::<SecurityHeadersConfig>()
-        .cloned()
-        .unwrap_or_default();
-
-    security_headers_middleware_with_config(config, request, next).await
+    security_headers_middleware_with_config(request, next, SecurityHeadersConfig::default()).await
 }
 
-/// Middleware function with custom configuration
+/// Middleware function that adds security headers to responses with custom config
 pub async fn security_headers_middleware_with_config(
-    config: SecurityHeadersConfig,
     request: Request,
     next: Next,
+    config: SecurityHeadersConfig,
 ) -> Result<Response, StatusCode> {
+    // Process the request
     let mut response = next.run(request).await;
     let headers = response.headers_mut();
 
@@ -320,23 +327,85 @@ pub async fn security_headers_middleware_with_config(
 }
 
 /// Middleware that enforces secure cookie settings
-#[allow(dead_code)]
 pub async fn secure_cookies_middleware(
     request: Request,
     next: Next,
 ) -> Result<Response, StatusCode> {
-    let response = next.run(request).await;
-    
-    // Note: In a real implementation, you would need to parse and modify
-    // Set-Cookie headers to ensure they have Secure, HttpOnly, and SameSite attributes
-    // This is a placeholder for the concept
-    
-    debug!("Processed secure cookies middleware");
+    let mut response = next.run(request).await;
+
+    // Check if we should force secure cookies (based on config or HTTPS)
+    let force_secure = request.extensions()
+        .get::<SecurityHeadersConfig>()
+        .map(|config| config.force_secure_cookies)
+        .unwrap_or(false);
+
+    let is_https = request.uri().scheme_str() == Some("https");
+
+    // Modify Set-Cookie headers to ensure security attributes
+    let headers = response.headers_mut();
+    let mut cookie_headers_to_update = Vec::new();
+
+    // Collect all Set-Cookie headers
+    for (name, value) in headers.iter() {
+        if name == "set-cookie" {
+            if let Ok(cookie_str) = value.to_str() {
+                cookie_headers_to_update.push(cookie_str.to_string());
+            }
+        }
+    }
+
+    // Remove existing Set-Cookie headers
+    headers.remove("set-cookie");
+
+    // Add back modified Set-Cookie headers with security attributes
+    for cookie_str in cookie_headers_to_update {
+        let mut secure_cookie = enhance_cookie_security(&cookie_str, is_https || force_secure);
+
+        if let Ok(header_value) = HeaderValue::from_str(&secure_cookie) {
+            headers.append("set-cookie", header_value);
+        }
+    }
+
+    debug!("Enhanced cookie security attributes");
     Ok(response)
 }
 
+/// Enhance a cookie string with security attributes
+fn enhance_cookie_security(cookie: &str, force_secure: bool) -> String {
+    let mut parts: Vec<&str> = cookie.split(';').map(|s| s.trim()).collect();
+    let mut has_secure = false;
+    let mut has_httponly = false;
+    let mut has_samesite = false;
+
+    // Check existing attributes
+    for part in &parts {
+        let lower = part.to_lowercase();
+        if lower == "secure" {
+            has_secure = true;
+        } else if lower == "httponly" {
+            has_httponly = true;
+        } else if lower.starts_with("samesite=") {
+            has_samesite = true;
+        }
+    }
+
+    // Add missing security attributes
+    if force_secure && !has_secure {
+        parts.push("Secure");
+    }
+
+    if !has_httponly {
+        parts.push("HttpOnly");
+    }
+
+    if !has_samesite {
+        parts.push("SameSite=Strict");
+    }
+
+    parts.join("; ")
+}
+
 /// Helper function to create a security event log entry
-#[allow(dead_code)]
 pub fn log_security_event(event: &str, details: Option<&str>) {
     tracing::warn!(
         security_event = event,

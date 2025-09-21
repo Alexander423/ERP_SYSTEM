@@ -176,6 +176,19 @@ impl TokenData {
     pub fn user_tokens_key(&self) -> String {
         format!("user_tokens:{}:{}:{}", self.tenant_id, self.user_id, self.purpose.cache_prefix())
     }
+
+    /// Validate token format by attempting to decode it as base64
+    pub fn validate_token_format(token: &str) -> bool {
+        base64_url::decode(token).is_ok()
+    }
+
+    /// Get entropy bits from token (for security analysis)
+    pub fn get_token_entropy_bits(&self) -> usize {
+        match base64_url::decode(&self.token) {
+            Ok(bytes) => bytes.len() * 8, // Each byte = 8 bits
+            Err(_) => 0,
+        }
+    }
 }
 
 /// Verification token for database storage
@@ -263,7 +276,7 @@ mod base64_url {
         URL_SAFE_NO_PAD.encode(data)
     }
     
-    #[allow(dead_code)]
+    /// Decode URL-safe base64 data - used for token validation
     pub fn decode(data: &str) -> Result<Vec<u8>, base64::DecodeError> {
         URL_SAFE_NO_PAD.decode(data)
     }

@@ -75,7 +75,7 @@ pub fn is_root() -> bool {
         use std::ptr;
         use winapi::um::handleapi::CloseHandle;
         use winapi::um::processthreadsapi::{GetCurrentProcess, OpenProcessToken};
-        use winapi::um::winnt::{TOKEN_ELEVATION, TOKEN_QUERY, TokenElevation};
+        use winapi::um::winnt::{TOKEN_QUERY, TokenElevation};
         use winapi::um::securitybaseapi::GetTokenInformation;
 
         unsafe {

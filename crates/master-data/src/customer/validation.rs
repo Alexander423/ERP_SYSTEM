@@ -589,20 +589,50 @@ impl CustomerValidationEngine for DefaultCustomerValidationEngine {
         })
     }
 
-    async fn validate_create_request(&self, _request: &CreateCustomerRequest, _context: &ValidationContext) -> Result<ValidationReport> {
-        // Implementation would validate the create request
-        // This is a placeholder
+    async fn validate_create_request(&self, request: &CreateCustomerRequest, context: &ValidationContext) -> Result<ValidationReport> {
+        let start_time = std::time::Instant::now();
+        let mut errors = Vec::new();
+        let warnings = Vec::new();
+
+        // Calculate data quality score using config weights
+        let completeness_score = self.calculate_completeness_score(request);
+        let accuracy_score = self.calculate_accuracy_score(request);
+
+        let data_quality_score =
+            (completeness_score * self.data_quality_config.completeness_weight) +
+            (accuracy_score * self.data_quality_config.accuracy_weight);
+
+        // Apply quality thresholds
+        if data_quality_score < self.data_quality_config.minimum_acceptable_score {
+            errors.push(ValidationIssue {
+                issue_type: ValidationIssueType::DataQuality,
+                severity: ValidationSeverity::Error,
+                field_path: "data_quality".to_string(),
+                current_value: Some(serde_json::Value::Number(serde_json::Number::from_f64(data_quality_score).unwrap())),
+                expected_value: Some(serde_json::Value::Number(serde_json::Number::from_f64(self.data_quality_config.minimum_acceptable_score).unwrap())),
+                error_code: "QUALITY_THRESHOLD".to_string(),
+                message: format!("Data quality score {} below minimum threshold {}",
+                               data_quality_score, self.data_quality_config.minimum_acceptable_score),
+                description: Some("Improve data completeness and accuracy".to_string()),
+                remediation_steps: vec!["Improve data completeness and accuracy".to_string()],
+                related_rules: vec![],
+            });
+        }
+
+        // Validate business rules
+        let business_rule_results = self.execute_business_rules(&self.business_rules, &Customer::default()).await?;
+
         Ok(ValidationReport {
-            is_valid: true,
-            validation_level: "Standard".to_string(),
-            errors: vec![],
-            warnings: vec![],
+            is_valid: errors.is_empty(),
+            validation_level: format!("{:?}", context.validation_level),
+            errors,
+            warnings,
             suggestions: vec![],
-            data_quality_score: 0.85,
+            data_quality_score,
             compliance_score: 0.90,
-            business_rule_results: vec![],
+            business_rule_results: business_rule_results.executed_rules,
             validation_timestamp: chrono::Utc::now(),
-            validation_duration_ms: 10,
+            validation_duration_ms: start_time.elapsed().as_millis() as u64,
         })
     }
 
@@ -680,6 +710,52 @@ impl CustomerValidationEngine for DefaultCustomerValidationEngine {
             orphaned_relationships: vec![],
             constraint_violations: vec![],
         })
+    }
+}
+
+impl DefaultCustomerValidationEngine {
+    /// Calculate completeness score based on required fields
+    fn calculate_completeness_score(&self, request: &CreateCustomerRequest) -> f64 {
+        let mut filled_fields = 0;
+        let total_fields = 4; // core required fields
+
+        if !request.legal_name.is_empty() { filled_fields += 1; }
+        // customer_type is always present (not Option)
+        filled_fields += 1;
+        if request.contacts.is_some() { filled_fields += 1; }
+        if request.financial_info.is_some() { filled_fields += 1; }
+
+        filled_fields as f64 / total_fields as f64
+    }
+
+    /// Calculate accuracy score based on field validation
+    fn calculate_accuracy_score(&self, request: &CreateCustomerRequest) -> f64 {
+        let mut valid_fields = 0;
+        let mut total_checked = 0;
+
+        // Check legal name validity
+        total_checked += 1;
+        if !request.legal_name.is_empty() && request.legal_name.len() <= 255 {
+            valid_fields += 1;
+        }
+
+        // Check customer type validity (always valid as it's an enum)
+        total_checked += 1;
+        valid_fields += 1;
+
+        // Check contact info validity
+        if let Some(ref contacts) = request.contacts {
+            for contact in contacts {
+                if let Some(ref email) = contact.email {
+                    total_checked += 1;
+                    if email.contains('@') && email.len() <= 100 {
+                        valid_fields += 1;
+                    }
+                }
+            }
+        }
+
+        if total_checked == 0 { 1.0 } else { valid_fields as f64 / total_checked as f64 }
     }
 }
 
@@ -1227,10 +1303,10 @@ mod tests {
         assert!(result.is_ok());
 
         let rule_result = result.unwrap();
-        assert!(rule_result.total_execution_time_ms >= 0);
-        assert!(rule_result.errors_found >= 0);
-        assert!(rule_result.warnings_found >= 0);
-        assert!(rule_result.transformations_applied >= 0);
+        assert!(rule_result.total_execution_time_ms > 0);
+        assert_eq!(rule_result.errors_found, 0);
+        assert_eq!(rule_result.warnings_found, 0);
+        assert_eq!(rule_result.transformations_applied, 0);
     }
 
     #[tokio::test]

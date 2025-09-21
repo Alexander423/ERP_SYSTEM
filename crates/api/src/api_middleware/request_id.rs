@@ -83,15 +83,73 @@ pub const REQUEST_ID_HEADER: &str = "x-request-id";
 /// - **IP Extraction**: Real client IPs extracted from trusted proxy headers
 /// - **No PII Leakage**: Request IDs don't contain sensitive information
 /// - **Header Sanitization**: Invalid headers are rejected safely
-#[allow(dead_code)]
-pub struct RequestIdMiddleware;
+/// Request ID middleware configuration and utilities
+///
+/// This struct provides configuration options and utility methods
+/// for the request ID middleware system.
+pub struct RequestIdMiddleware {
+    /// Custom request ID header name (defaults to x-request-id)
+    pub header_name: String,
+    /// Whether to validate request ID format strictly
+    pub strict_validation: bool,
+    /// Whether to generate request IDs if none provided
+    pub auto_generate: bool,
+}
 
 impl RequestIdMiddleware {
-    #[allow(dead_code)]
+    /// Create a new RequestIdMiddleware with default configuration
     pub fn new() -> Self {
-        Self
+        Self {
+            header_name: REQUEST_ID_HEADER.to_string(),
+            strict_validation: true,
+            auto_generate: true,
+        }
     }
-    
+
+    /// Create middleware with custom header name
+    pub fn with_header_name(mut self, header_name: impl Into<String>) -> Self {
+        self.header_name = header_name.into();
+        self
+    }
+
+    /// Enable or disable strict validation of request IDs
+    pub fn with_strict_validation(mut self, strict: bool) -> Self {
+        self.strict_validation = strict;
+        self
+    }
+
+    /// Enable or disable automatic generation of request IDs
+    pub fn with_auto_generate(mut self, auto_generate: bool) -> Self {
+        self.auto_generate = auto_generate;
+        self
+    }
+
+    /// Extract request ID using this middleware's configuration
+    pub fn extract_request_id(&self, request: &Request) -> Option<String> {
+        if let Some(value) = request.headers().get(&self.header_name) {
+            if let Ok(id_str) = value.to_str() {
+                if !self.strict_validation || is_valid_request_id(id_str) {
+                    return Some(id_str.to_string());
+                }
+            }
+        }
+
+        if self.auto_generate {
+            Some(Uuid::new_v4().to_string())
+        } else {
+            None
+        }
+    }
+
+    /// Check if a request has a valid request ID
+    pub fn has_valid_request_id(&self, request: &Request) -> bool {
+        if let Some(value) = request.headers().get(&self.header_name) {
+            if let Ok(id_str) = value.to_str() {
+                return !self.strict_validation || is_valid_request_id(id_str);
+            }
+        }
+        false
+    }
 }
 
 /// Middleware function that handles request ID generation and injection
@@ -244,10 +302,25 @@ fn is_valid_ip(ip: &str) -> bool {
 }
 
 /// Extension trait to easily get request ID from extensions
-#[allow(dead_code)]
+///
+/// This trait provides convenient methods to extract request IDs and context
+/// from HTTP requests. It's designed to be used throughout the application
+/// where request correlation is needed.
 pub trait RequestIdExt {
+    /// Get the request ID if available in the request extensions
     fn request_id(&self) -> Option<&str>;
+
+    /// Get the full request context if available in the request extensions
     fn request_context(&self) -> Option<&RequestContext>;
+
+    /// Get the correlation ID if different from request ID
+    fn correlation_id(&self) -> Option<&str>;
+
+    /// Get the source IP address from the request context
+    fn source_ip(&self) -> Option<&str>;
+
+    /// Get the user agent from the request context
+    fn user_agent(&self) -> Option<&str>;
 }
 
 impl RequestIdExt for Request {
@@ -256,9 +329,27 @@ impl RequestIdExt for Request {
             .get::<RequestContext>()
             .map(|ctx| ctx.request_id.as_str())
     }
-    
+
     fn request_context(&self) -> Option<&RequestContext> {
         self.extensions().get::<RequestContext>()
+    }
+
+    fn correlation_id(&self) -> Option<&str> {
+        self.extensions()
+            .get::<RequestContext>()
+            .and_then(|ctx| ctx.correlation_id.as_deref())
+    }
+
+    fn source_ip(&self) -> Option<&str> {
+        self.extensions()
+            .get::<RequestContext>()
+            .and_then(|ctx| ctx.source_ip.as_deref())
+    }
+
+    fn user_agent(&self) -> Option<&str> {
+        self.extensions()
+            .get::<RequestContext>()
+            .and_then(|ctx| ctx.user_agent.as_deref())
     }
 }
 

@@ -83,6 +83,12 @@ pub enum MasterDataError {
 
     #[error("Internal error: {message}")]
     Internal { message: String },
+
+    #[error("Database error: {0}")]
+    DatabaseError(String),
+
+    #[error("Not found: {0}")]
+    NotFoundError(String),
 }
 
 pub type Result<T> = std::result::Result<T, MasterDataError>;
@@ -145,6 +151,15 @@ impl axum::response::IntoResponse for MasterDataError {
 
             MasterDataError::DataQualityIssue { .. } => {
                 (StatusCode::UNPROCESSABLE_ENTITY, self.to_string())
+            }
+
+            MasterDataError::DatabaseError(_) => {
+                (StatusCode::INTERNAL_SERVER_ERROR, "Database error".to_string())
+            }
+
+
+            MasterDataError::NotFoundError(_) => {
+                (StatusCode::NOT_FOUND, self.to_string())
             }
         };
 

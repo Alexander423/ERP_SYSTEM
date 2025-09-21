@@ -3,7 +3,7 @@
 //! HTTP handlers for user CRUD operations and management
 
 use axum::{
-    extract::{State, Path, Query},
+    extract::{State, Path, Query, Extension},
     http::StatusCode,
     response::Json,
     routing::{get, post, put, delete, Router},
@@ -13,6 +13,8 @@ use serde_json::{json, Value};
 use uuid::Uuid;
 
 use crate::state::AppState;
+use erp_core::TenantContext;
+use erp_auth::dto::{InviteUserRequest as AuthInviteUserRequest, UpdateUserRequest as AuthUpdateUserRequest};
 
 #[derive(Debug, Deserialize)]
 pub struct PaginationParams {
@@ -62,106 +64,135 @@ pub fn user_routes() -> Router<AppState> {
 
 /// List all users
 async fn list_users(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     Query(params): Query<PaginationParams>,
+    Extension(tenant_context): Extension<TenantContext>,
 ) -> Result<Json<Value>, StatusCode> {
-    // For now, return a mock response
-    // In a complete implementation, we'd:
-    // 1. Extract tenant context from middleware
-    // 2. Call auth service to list users
-    // 3. Return paginated results
-
-    Ok(Json(json!({
-        "success": true,
-        "users": [],
-        "pagination": {
-            "page": params.page,
-            "limit": params.limit,
-            "total": 0,
-            "total_pages": 0
+    match state.auth_service.list_users(&tenant_context, params.limit, (params.page - 1) * params.limit).await {
+        Ok(users) => {
+            Ok(Json(json!({
+                "success": true,
+                "users": users,
+                "pagination": {
+                    "page": params.page,
+                    "limit": params.limit,
+                    "total": users.len(),
+                    "total_pages": (users.len() as f64 / params.limit as f64).ceil() as u32
+                }
+            })))
         }
-    })))
+        Err(e) => {
+            tracing::error!("Failed to list users: {}", e);
+            Ok(Json(json!({
+                "success": false,
+                "error": "Failed to retrieve users",
+                "message": e.to_string()
+            })))
+        }
+    }
 }
 
 /// Create a new user
 async fn create_user(
     State(_state): State<AppState>,
-    Json(_payload): Json<CreateUserRequest>,
+    Json(payload): Json<CreateUserRequest>,
 ) -> Result<Json<Value>, StatusCode> {
     // For now, return a meaningful error since direct user creation should use invite flow
+    tracing::info!("Create user request for email: {}, first_name: {}, last_name: {}, role_ids: {:?}, password_provided: {}",
+        payload.email, payload.first_name, payload.last_name, payload.role_ids, !payload.password.is_empty());
+
     Ok(Json(json!({
         "success": false,
-        "message": "Direct user creation not implemented. Use invite_user endpoint instead."
+        "message": "Direct user creation not implemented. Use invite_user endpoint instead.",
+        "requested_email": payload.email
     })))
 }
 
 /// Get user by ID
 async fn get_user(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     Path(user_id): Path<Uuid>,
+    Extension(tenant_context): Extension<TenantContext>,
 ) -> Result<Json<Value>, StatusCode> {
-    // For now, return a mock user
-    // In a complete implementation, we'd:
-    // 1. Extract tenant context from middleware
-    // 2. Call auth service to get user
-    // 3. Return user data or 404
-
-    Ok(Json(json!({
-        "success": true,
-        "user": {
-            "id": user_id,
-            "email": "user@example.com",
-            "first_name": "Sample",
-            "last_name": "User",
-            "is_active": true
+    match state.auth_service.get_user(&tenant_context, user_id).await {
+        Ok(user) => {
+            Ok(Json(json!({
+                "success": true,
+                "user": user
+            })))
         }
-    })))
+        Err(e) => {
+            tracing::error!("Failed to get user {}: {}", user_id, e);
+            Ok(Json(json!({
+                "success": false,
+                "error": "Failed to retrieve user",
+                "message": e.to_string()
+            })))
+        }
+    }
 }
 
 /// Update user
 async fn update_user(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     Path(user_id): Path<Uuid>,
+    Extension(tenant_context): Extension<TenantContext>,
     Json(payload): Json<UpdateUserRequest>,
 ) -> Result<Json<Value>, StatusCode> {
-    // For now, return a mock updated user
-    // In a complete implementation, we'd:
-    // 1. Extract tenant context from middleware
-    // 2. Call auth service to update user
-    // 3. Return updated user data
+    // Convert to auth service request
+    let auth_request = AuthUpdateUserRequest {
+        first_name: payload.first_name,
+        last_name: payload.last_name,
+        is_active: payload.is_active,
+    };
 
-    Ok(Json(json!({
-        "success": true,
-        "user": {
-            "id": user_id,
-            "first_name": payload.first_name.unwrap_or("Updated".to_string()),
-            "last_name": payload.last_name.unwrap_or("User".to_string()),
-            "is_active": payload.is_active.unwrap_or(true)
-        },
-        "message": "User updated successfully (mock response)"
-    })))
+    match state.auth_service.update_user(&tenant_context, user_id, auth_request).await {
+        Ok(user) => {
+            Ok(Json(json!({
+                "success": true,
+                "user": user,
+                "message": "User updated successfully"
+            })))
+        }
+        Err(e) => {
+            tracing::error!("Failed to update user {}: {}", user_id, e);
+            Ok(Json(json!({
+                "success": false,
+                "error": "Failed to update user",
+                "message": e.to_string()
+            })))
+        }
+    }
 }
 
 /// Delete user
 async fn delete_user(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     Path(user_id): Path<Uuid>,
+    Extension(tenant_context): Extension<TenantContext>,
 ) -> Result<Json<Value>, StatusCode> {
-    // For now, return a mock success response
-    // In a complete implementation, we'd:
-    // 1. Extract tenant context from middleware
-    // 2. Call auth service to delete user
-    // 3. Return success confirmation
-
-    Ok(Json(json!({
-        "success": true,
-        "message": format!("User {} deleted successfully (mock response)", user_id)
-    })))
+    match state.auth_service.delete_user(&tenant_context, user_id).await {
+        Ok(()) => {
+            Ok(Json(json!({
+                "success": true,
+                "message": format!("User {} deleted successfully", user_id)
+            })))
+        }
+        Err(e) => {
+            tracing::error!("Failed to delete user {}: {}", user_id, e);
+            Ok(Json(json!({
+                "success": false,
+                "error": "Failed to delete user",
+                "message": e.to_string()
+            })))
+        }
+    }
 }
 
 /// Invite a new user
 async fn invite_user(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
+    Extension(tenant_context): Extension<TenantContext>,
     Json(payload): Json<InviteUserRequest>,
 ) -> Result<Json<Value>, StatusCode> {
     // Basic validation
@@ -172,15 +203,29 @@ async fn invite_user(
         })));
     }
 
-    // For now, return a mock success response
-    // In a complete implementation, we'd:
-    // 1. Extract tenant context from middleware
-    // 2. Call auth service to invite user
-    // 3. Return invitation confirmation
+    // Convert to auth service request
+    let auth_request = AuthInviteUserRequest {
+        email: payload.email,
+        first_name: payload.first_name,
+        last_name: payload.last_name,
+        role_ids: payload.role_ids,
+    };
 
-    Ok(Json(json!({
-        "success": true,
-        "message": format!("User invitation sent to {} (mock response)", payload.email),
-        "invitation_id": uuid::Uuid::new_v4()
-    })))
+    match state.auth_service.invite_user(&tenant_context, auth_request).await {
+        Ok(user) => {
+            Ok(Json(json!({
+                "success": true,
+                "user": user,
+                "message": "User invitation sent successfully"
+            })))
+        }
+        Err(e) => {
+            tracing::error!("Failed to invite user: {}", e);
+            Ok(Json(json!({
+                "success": false,
+                "error": "Failed to invite user",
+                "message": e.to_string()
+            })))
+        }
+    }
 }

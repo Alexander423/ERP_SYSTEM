@@ -118,10 +118,11 @@ impl EmailService {
         match self.provider {
             EmailProvider::Mock => {
                 debug!(
-                    "Mock email service: would send email to {} with subject '{}'", 
+                    "Mock email service: would send email to {} with subject '{}'",
                     to, subject
                 );
-                Ok(())
+                // Use the simulate_email_send method for mock provider
+                self.simulate_email_send(to, subject, html_body, text_body).await
             },
             EmailProvider::Smtp | EmailProvider::SendGrid | EmailProvider::AwsSes => {
                 self.send_via_smtp(to, subject, html_body, text_body).await
@@ -165,8 +166,14 @@ impl EmailService {
         info!("Testing email service connection");
         
         if self.smtp_transport.is_none() {
-            debug!("Mock email service: connection test passed");
-            return Ok(());
+            debug!("Mock email service: testing connection with simulate_email_send");
+            // Use simulate_email_send to test mock functionality
+            return self.simulate_email_send(
+                "test@example.com",
+                "Connection Test",
+                "<p>This is a connection test email</p>",
+                Some("This is a connection test email")
+            ).await;
         }
 
         // In a real implementation, you would test the SMTP connection
@@ -351,7 +358,6 @@ impl EmailService {
     }
 
     /// Simulate email sending (placeholder for real SMTP implementation)
-    #[allow(dead_code)]
     async fn simulate_email_send(
         &self,
         to: &str,

@@ -2,9 +2,9 @@
 
 use anyhow::{anyhow, Result};
 use colored::*;
-use serde_json::{json, Value};
+use serde_json::json;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use chrono::{DateTime, Utc};
 use walkdir::WalkDir;
 
@@ -12,40 +12,45 @@ use crate::{BackupCommands, config::Config};
 
 pub async fn execute_backup_command(
     cmd: BackupCommands,
-    config: &Config,
+    _config: &Config,
 ) -> Result<()> {
     match cmd {
-        BackupCommands::Create { output, include, exclude, compression } => {
-            create_backup(&output, include, exclude, compression).await
+        BackupCommands::Create { name, output, include, exclude, compression } => {
+            create_backup(&name, output.as_deref(), include, exclude, &compression).await
         }
         BackupCommands::List { directory, format } => {
-            list_backups(&directory, &format).await
+            list_backups(directory.as_deref(), &format).await
         }
-        BackupCommands::Restore { backup, force, components } => {
+        BackupCommands::Restore { name: _name, backup, force, components } => {
             restore_backup(&backup, force, components).await
         }
-        BackupCommands::Verify { backup, detailed } => {
-            verify_backup(&backup, detailed).await
+        BackupCommands::Verify { name, detailed } => {
+            verify_backup(&name, detailed).await
         }
-        BackupCommands::Cleanup { directory, keep_days, dry_run } => {
-            cleanup_backups(&directory, keep_days, dry_run).await
+        BackupCommands::Cleanup { keep, dry_run } => {
+            cleanup_backups("./backups", keep as u32, dry_run).await
         }
     }
 }
 
 async fn create_backup(
-    output_dir: &str,
+    name: &str,
+    output_dir: Option<&str>,
     include: Vec<String>,
     exclude: Vec<String>,
-    compression: u8,
+    compression: &str,
 ) -> Result<()> {
     println!("{}", "💾 Creating system backup...".blue().bold());
 
+    let default_output = "./backups".to_string();
+    let output_dir = output_dir.unwrap_or(&default_output);
     let output_path = Path::new(output_dir);
     if !output_path.exists() {
         fs::create_dir_all(output_path)?;
         println!("Created backup directory: {}", output_dir.yellow());
     }
+
+    println!("Creating backup: {}", name.yellow());
 
     let timestamp = Utc::now().format("%Y%m%d_%H%M%S");
     let backup_name = format!("erp_backup_{}", timestamp);
@@ -97,9 +102,15 @@ async fn create_backup(
     }
 
     // Compress if requested
-    if compression > 0 {
-        println!("Compressing backup...");
-        compress_backup(&backup_path, compression).await?;
+    if compression != "none" {
+        println!("Compressing backup with {} compression...", compression);
+        let compression_level = match compression {
+            "fast" => 1,
+            "medium" => 5,
+            "max" => 9,
+            _ => 5, // default
+        };
+        compress_backup(&backup_path, compression_level).await?;
     }
 
     println!("{}", format!("✅ Backup created: {}", backup_path.display()).green().bold());
@@ -250,8 +261,16 @@ async fn backup_containers(backup_path: &Path) -> Result<()> {
 async fn compress_backup(backup_path: &Path, compression: u8) -> Result<()> {
     let compressed_file = format!("{}.tar.gz", backup_path.display());
 
+    // Select compression method based on level
+    let compression_arg = match compression {
+        0..=3 => "czf",  // gzip fast
+        4..=6 => "cJf",  // xz medium
+        7..=9 => "cjf",  // bzip2 max
+        _ => "czf",      // default to gzip
+    };
+
     let output = tokio::process::Command::new("tar")
-        .arg("czf")
+        .arg(compression_arg)
         .arg(&compressed_file)
         .arg("-C")
         .arg(backup_path.parent().unwrap())
@@ -273,7 +292,8 @@ async fn compress_backup(backup_path: &Path, compression: u8) -> Result<()> {
     Ok(())
 }
 
-async fn list_backups(directory: &str, format: &str) -> Result<()> {
+async fn list_backups(directory: Option<&str>, format: &str) -> Result<()> {
+    let directory = directory.unwrap_or("./backups");
     println!("{}", "📋 Listing available backups...".blue().bold());
 
     let backup_dir = Path::new(directory);
@@ -385,8 +405,68 @@ async fn restore_backup(backup: &str, force: bool, components: Vec<String>) -> R
         }
     }
 
-    // TODO: Implement restore logic
-    println!("Restore functionality not yet implemented");
+    // Filter components if specified
+    if !components.is_empty() {
+        println!("Restoring specific components: {:?}", components);
+        for component in &components {
+            println!("  - Restoring component: {}", component);
+        }
+    } else {
+        println!("Restoring all components from backup");
+    }
+
+    // Check if backup is compressed
+    let working_backup_path = if backup_path.extension().map_or(false, |ext| ext == "gz" || ext == "tar") {
+        println!("📂 Extracting compressed backup...");
+        extract_backup(backup_path).await?
+    } else {
+        backup_path.to_path_buf()
+    };
+
+    // Read manifest
+    let manifest_path = working_backup_path.join("manifest.json");
+    if !manifest_path.exists() {
+        return Err(anyhow!("Invalid backup: manifest.json not found"));
+    }
+
+    let manifest_content = fs::read_to_string(&manifest_path)?;
+    let manifest: serde_json::Value = serde_json::from_str(&manifest_content)?;
+
+    let backup_components = manifest["components"].as_array()
+        .ok_or_else(|| anyhow!("Invalid manifest: components not found"))?;
+
+    // Filter components to restore
+    let restore_components: Vec<String> = if components.is_empty() {
+        backup_components.iter()
+            .filter_map(|v| v.as_str().map(String::from))
+            .collect()
+    } else {
+        components
+    };
+
+    println!("Restoring components: {:?}", restore_components);
+
+    // Restore each component
+    for component in &restore_components {
+        println!("🔄 Restoring component: {}", component.yellow());
+
+        match component.as_str() {
+            "database" => restore_database(&working_backup_path).await?,
+            "config" => restore_config(&working_backup_path).await?,
+            "logs" => restore_logs(&working_backup_path).await?,
+            "containers" => restore_containers(&working_backup_path).await?,
+            _ => {
+                println!("{}", format!("⚠️ Unknown component: {}", component).yellow());
+            }
+        }
+    }
+
+    // Clean up extracted backup if it was compressed
+    if backup_path != working_backup_path {
+        fs::remove_dir_all(&working_backup_path)?;
+    }
+
+    println!("{}", "✅ Restore completed successfully".green().bold());
     Ok(())
 }
 
@@ -398,8 +478,108 @@ async fn verify_backup(backup: &str, detailed: bool) -> Result<()> {
         return Err(anyhow!("Backup not found: {}", backup));
     }
 
-    // TODO: Implement verification logic
-    println!("Verification functionality not yet implemented");
+    let mut issues_found = 0;
+
+    // Check if backup is compressed and extract if needed
+    let working_backup_path = if backup_path.extension().map_or(false, |ext| ext == "gz" || ext == "tar") {
+        println!("📂 Extracting backup for verification...");
+        extract_backup(backup_path).await?
+    } else {
+        backup_path.to_path_buf()
+    };
+
+    // Verify manifest exists and is valid
+    let manifest_path = working_backup_path.join("manifest.json");
+    if !manifest_path.exists() {
+        println!("{}", "❌ Missing manifest.json".red());
+        issues_found += 1;
+        return Err(anyhow!("Backup verification failed: missing manifest"));
+    }
+
+    let manifest_content = fs::read_to_string(&manifest_path).map_err(|e| {
+        println!("{}", "❌ Cannot read manifest.json".red());
+        anyhow!("Failed to read manifest: {}", e)
+    })?;
+
+    let manifest: serde_json::Value = serde_json::from_str(&manifest_content).map_err(|e| {
+        println!("{}", "❌ Invalid manifest.json format".red());
+        anyhow!("Invalid manifest JSON: {}", e)
+    })?;
+
+    println!("✅ Manifest file is valid");
+
+    // Verify backup components
+    if let Some(components) = manifest["components"].as_array() {
+        println!("🔍 Verifying backup components...");
+
+        for component in components {
+            if let Some(component_name) = component.as_str() {
+                let component_path = working_backup_path.join(component_name);
+
+                if component_path.exists() {
+                    println!("✅ Component '{}' found", component_name.green());
+
+                    if detailed {
+                        match verify_component(&component_path, component_name).await {
+                            Ok(()) => println!("  ✅ Component integrity verified"),
+                            Err(e) => {
+                                println!("  ❌ Component integrity check failed: {}", e.to_string().red());
+                                issues_found += 1;
+                            }
+                        }
+                    }
+                } else {
+                    println!("❌ Component '{}' missing", component_name.red());
+                    issues_found += 1;
+                }
+            }
+        }
+    }
+
+    // Additional detailed checks
+    if detailed {
+        println!("🔍 Performing detailed verification...");
+
+        // Check backup creation timestamp
+        if let Some(created_at) = manifest["created_at"].as_str() {
+            match DateTime::parse_from_rfc3339(created_at) {
+                Ok(timestamp) => {
+                    let age = Utc::now().signed_duration_since(timestamp.with_timezone(&Utc));
+                    println!("✅ Backup age: {} days", age.num_days());
+
+                    if age.num_days() > 30 {
+                        println!("⚠️ Backup is older than 30 days");
+                    }
+                }
+                Err(_) => {
+                    println!("❌ Invalid creation timestamp in manifest");
+                    issues_found += 1;
+                }
+            }
+        }
+
+        // Verify backup size
+        let backup_size = calculate_dir_size(&working_backup_path)?;
+        println!("✅ Total backup size: {}", format_bytes(backup_size));
+
+        if backup_size < 1024 {
+            println!("⚠️ Backup seems unusually small (< 1KB)");
+        }
+    }
+
+    // Clean up extracted backup if it was compressed
+    if backup_path != working_backup_path {
+        fs::remove_dir_all(&working_backup_path)?;
+    }
+
+    // Final result
+    if issues_found == 0 {
+        println!("{}", "✅ Backup verification completed successfully".green().bold());
+    } else {
+        println!("{}", format!("❌ Backup verification completed with {} issues", issues_found).red().bold());
+        return Err(anyhow!("Backup verification failed with {} issues", issues_found));
+    }
+
     Ok(())
 }
 
@@ -510,4 +690,241 @@ fn format_bytes(bytes: u64) -> String {
     }
 
     format!("{:.1} {}", size, UNITS[unit_index])
+}
+
+async fn extract_backup(backup_path: &Path) -> Result<std::path::PathBuf> {
+    let temp_dir = std::env::temp_dir().join(format!("erp_backup_extract_{}", Utc::now().timestamp()));
+    fs::create_dir_all(&temp_dir)?;
+
+    println!("📂 Extracting to: {}", temp_dir.display());
+
+    let output = tokio::process::Command::new("tar")
+        .arg("-xf")
+        .arg(backup_path)
+        .arg("-C")
+        .arg(&temp_dir)
+        .output()
+        .await;
+
+    match output {
+        Ok(result) if result.status.success() => {
+            // Find the extracted directory (should be the only subdirectory)
+            for entry in fs::read_dir(&temp_dir)? {
+                let entry = entry?;
+                if entry.path().is_dir() {
+                    return Ok(entry.path());
+                }
+            }
+            Ok(temp_dir)
+        }
+        _ => Err(anyhow!("Failed to extract backup archive"))
+    }
+}
+
+async fn restore_database(backup_path: &Path) -> Result<()> {
+    println!("📊 Restoring database from backup...");
+
+    let db_backup_path = backup_path.join("database");
+    if !db_backup_path.exists() {
+        return Err(anyhow!("Database backup not found"));
+    }
+
+    // Find the database dump file
+    let mut dump_file = None;
+    for entry in fs::read_dir(&db_backup_path)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.extension().map_or(false, |ext| ext == "sql") {
+            dump_file = Some(path);
+            break;
+        }
+    }
+
+    let dump_file = dump_file.ok_or_else(|| anyhow!("Database dump file not found"))?;
+
+    let database_url = std::env::var("DATABASE_URL")
+        .unwrap_or_else(|_| "postgresql://erp_admin:erp_secure_password_change_in_production@localhost:5432/erp_main".to_string());
+
+    // Parse URL for restore parameters
+    let url = url::Url::parse(&database_url)?;
+    let host = url.host_str().unwrap_or("localhost");
+    let port = url.port().unwrap_or(5432);
+    let username = url.username();
+    let password = url.password().unwrap_or("");
+    let database = url.path().trim_start_matches('/');
+
+    let output = tokio::process::Command::new("pg_restore")
+        .arg("--host").arg(host)
+        .arg("--port").arg(port.to_string())
+        .arg("--username").arg(username)
+        .arg("--no-password")
+        .arg("--dbname").arg(database)
+        .arg("--clean")
+        .arg("--if-exists")
+        .arg(&dump_file)
+        .env("PGPASSWORD", password)
+        .output()
+        .await;
+
+    match output {
+        Ok(result) if result.status.success() => {
+            println!("✅ Database restoration completed");
+        }
+        Ok(result) => {
+            let stderr = String::from_utf8_lossy(&result.stderr);
+            return Err(anyhow!("Database restoration failed: {}", stderr));
+        }
+        Err(_) => {
+            return Err(anyhow!("pg_restore not found"));
+        }
+    }
+
+    Ok(())
+}
+
+async fn restore_config(backup_path: &Path) -> Result<()> {
+    println!("⚙️ Restoring configuration from backup...");
+
+    let config_backup_path = backup_path.join("config");
+    if !config_backup_path.exists() {
+        return Err(anyhow!("Configuration backup not found"));
+    }
+
+    // Restore configuration files
+    for entry in fs::read_dir(&config_backup_path)? {
+        let entry = entry?;
+        let src_path = entry.path();
+        let filename = src_path.file_name().unwrap();
+
+        // Determine destination based on filename
+        let dest_path = match filename.to_str() {
+            Some("docker-compose.yml") => Path::new("./docker-compose.yml").to_path_buf(),
+            Some("Cargo.toml") => Path::new("./Cargo.toml").to_path_buf(),
+            _ => Path::new("./config").join(filename),
+        };
+
+        if let Some(parent) = dest_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+
+        if src_path.is_dir() {
+            copy_dir_recursive(&src_path, &dest_path)?;
+        } else {
+            fs::copy(&src_path, &dest_path)?;
+        }
+
+        println!("📋 Restored: {}", dest_path.display());
+    }
+
+    println!("✅ Configuration restoration completed");
+    Ok(())
+}
+
+async fn restore_logs(backup_path: &Path) -> Result<()> {
+    println!("📋 Restoring logs from backup...");
+
+    let logs_backup_path = backup_path.join("logs");
+    if !logs_backup_path.exists() {
+        return Err(anyhow!("Logs backup not found"));
+    }
+
+    // Create logs directory if it doesn't exist
+    let logs_dir = Path::new("./logs");
+    fs::create_dir_all(logs_dir)?;
+
+    // Copy log files
+    copy_dir_recursive(&logs_backup_path, logs_dir)?;
+
+    println!("✅ Logs restoration completed");
+    Ok(())
+}
+
+async fn restore_containers(backup_path: &Path) -> Result<()> {
+    println!("🐳 Restoring container configuration from backup...");
+
+    let containers_backup_path = backup_path.join("containers");
+    if !containers_backup_path.exists() {
+        return Err(anyhow!("Container backup not found"));
+    }
+
+    let compose_file = containers_backup_path.join("docker-compose.yml");
+    if compose_file.exists() {
+        fs::copy(&compose_file, "./docker-compose.yml")?;
+        println!("📋 Restored: docker-compose.yml");
+    }
+
+    println!("✅ Container restoration completed");
+    Ok(())
+}
+
+async fn verify_component(component_path: &Path, component_name: &str) -> Result<()> {
+    match component_name {
+        "database" => {
+            // Verify database dump exists and is readable
+            let mut found_dump = false;
+            for entry in fs::read_dir(component_path)? {
+                let entry = entry?;
+                if entry.path().extension().map_or(false, |ext| ext == "sql") {
+                    found_dump = true;
+                    break;
+                }
+            }
+            if !found_dump {
+                return Err(anyhow!("No database dump file found"));
+            }
+        }
+        "config" => {
+            // Verify essential config files exist
+            let essential_files = ["docker-compose.yml", "Cargo.toml"];
+            for file in &essential_files {
+                let file_path = component_path.join(file);
+                if file_path.exists() {
+                    return Ok(()); // At least one essential file found
+                }
+            }
+            return Err(anyhow!("No essential configuration files found"));
+        }
+        "logs" => {
+            // Verify logs directory is not empty and check file types
+            let mut has_files = false;
+            let mut file_count = 0;
+            let mut total_size = 0u64;
+
+            for entry in fs::read_dir(component_path)? {
+                let entry = entry?;
+                if entry.path().is_file() {
+                    file_count += 1;
+                    if let Ok(metadata) = entry.metadata() {
+                        total_size += metadata.len();
+                    }
+                }
+                has_files = true;
+            }
+
+            if !has_files {
+                return Err(anyhow!("Logs directory is empty"));
+            }
+
+            // Log verification details
+            tracing::debug!(
+                "Verified logs component: {} files, {} bytes total",
+                file_count,
+                total_size
+            );
+        }
+        "containers" => {
+            // Verify container configuration exists
+            let compose_file = component_path.join("docker-compose.yml");
+            if !compose_file.exists() {
+                return Err(anyhow!("docker-compose.yml not found"));
+            }
+        }
+        _ => {
+            // Generic verification: just check if directory exists and is readable
+            if !component_path.exists() {
+                return Err(anyhow!("Component directory does not exist"));
+            }
+        }
+    }
+    Ok(())
 }

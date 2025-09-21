@@ -830,6 +830,22 @@ impl GdprCompliance {
         }
     }
 
+    /// Get cached assessment if available
+    pub fn get_cached_assessment(&self, tenant_id: Uuid) -> Option<ComplianceAssessment> {
+        if let Ok(cache) = self.assessment_cache.read() {
+            cache.get(&tenant_id).cloned()
+        } else {
+            None
+        }
+    }
+
+    /// Cache assessment result
+    pub fn cache_assessment(&self, tenant_id: Uuid, assessment: ComplianceAssessment) {
+        if let Ok(mut cache) = self.assessment_cache.write() {
+            cache.insert(tenant_id, assessment);
+        }
+    }
+
     /// Assess GDPR Article compliance
     fn assess_gdpr_articles(&self, practices: &DataHandlingPractices) -> Vec<ControlAssessment> {
         let mut assessments = Vec::new();
@@ -1188,6 +1204,15 @@ impl SoxCompliance {
     pub fn new(pool: sqlx::PgPool) -> Self {
         Self { pool }
     }
+
+    /// Check database connectivity for SOX compliance
+    pub async fn check_database_health(&self) -> Result<bool> {
+        let result = sqlx::query_scalar::<_, i32>("SELECT 1")
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| crate::error::MasterDataError::Database(e))?;
+        Ok(result == 1)
+    }
 }
 
 /// HIPAA compliance implementation
@@ -1198,6 +1223,15 @@ pub struct HipaaCompliance {
 impl HipaaCompliance {
     pub fn new(pool: sqlx::PgPool) -> Self {
         Self { pool }
+    }
+
+    /// Check database connectivity for HIPAA compliance
+    pub async fn check_database_health(&self) -> Result<bool> {
+        let result = sqlx::query_scalar::<_, i32>("SELECT 1")
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| crate::error::MasterDataError::Database(e))?;
+        Ok(result == 1)
     }
 }
 

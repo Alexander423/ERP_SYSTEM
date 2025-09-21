@@ -411,7 +411,6 @@ mod tests {
     use crate::jobs::traits::JobHandler;
     use async_trait::async_trait;
 
-    #[allow(dead_code)]
     struct TestJobHandler;
 
     #[async_trait]
@@ -454,5 +453,50 @@ mod tests {
 
         assert_eq!(metrics.success_rate(), 0.95);
         assert_eq!(metrics.average_processing_time(), Duration::from_secs(10));
+    }
+
+    #[tokio::test]
+    async fn test_job_handler_functionality() {
+        let handler = TestJobHandler;
+
+        // Test job type
+        assert_eq!(handler.job_type(), "test_job");
+
+        // Test job data validation
+        let job_data = serde_json::json!({"test": "data"});
+        assert!(handler.validate_job_data(&job_data).is_ok());
+
+        // Test job handling
+        let context = JobContext {
+            job_id: JobId::new(),
+            attempt: 1,
+            max_retries: 3,
+            started_at: std::time::SystemTime::now(),
+        };
+
+        let result = handler.handle(&job_data, &context).await;
+        assert!(result.is_success());
+    }
+
+    #[test]
+    fn test_job_handler_properties() {
+        let handler = TestJobHandler;
+
+        // Verify the handler implements the required traits
+        assert_eq!(handler.job_type(), "test_job");
+
+        // Test that validation passes for empty data
+        let empty_data = serde_json::json!({});
+        assert!(handler.validate_job_data(&empty_data).is_ok());
+
+        // Test that validation passes for complex data
+        let complex_data = serde_json::json!({
+            "user_id": 123,
+            "action": "test",
+            "metadata": {
+                "timestamp": "2023-01-01T00:00:00Z"
+            }
+        });
+        assert!(handler.validate_job_data(&complex_data).is_ok());
     }
 }

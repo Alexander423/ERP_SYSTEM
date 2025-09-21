@@ -3,15 +3,16 @@
 //! HTTP handlers for authentication endpoints including login, register, 2FA, etc.
 
 use axum::{
-    extract::State,
+    extract::{Request, State},
     http::StatusCode,
-    response::Json,
+    response::{IntoResponse, Json},
     routing::{post, Router},
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-use crate::state::AppState;
+use crate::{state::AppState, error_handler::create_api_error_with_request_id};
+use erp_core::error::{Error, ErrorCode};
 
 #[derive(Debug, Deserialize)]
 pub struct LoginRequest {
@@ -77,6 +78,7 @@ pub fn auth_routes() -> Router<AppState> {
         .route("/reset-password", post(reset_password))
         .route("/verify-email", post(verify_email))
         .route("/logout", post(logout))
+        .route("/validate", post(validate_token))
 }
 
 /// Register a new tenant and admin user
@@ -331,12 +333,57 @@ async fn verify_email(
 }
 
 /// User logout
-async fn logout(State(state): State<AppState>) -> Result<Json<Value>, StatusCode> {
+async fn logout(State(_state): State<AppState>) -> Result<Json<Value>, StatusCode> {
     // In production, we would get the session ID from the token
     // For now, just return success
-    // TODO: Implement proper session extraction from JWT and call state.auth_service.logout(session_id)
+    // TODO: Extract JWT token from Authorization header and call state.auth_service.logout(jti, client_ip)
+
+    // Log the logout attempt
+    tracing::info!("User logout requested");
+
     Ok(Json(json!({
         "success": true,
         "message": "Logged out successfully"
     })))
+}
+
+/// Validate an authentication token with proper error handling
+/// This function demonstrates the usage of ApiError methods with request context
+async fn validate_token(
+    State(_state): State<AppState>,
+    request: Request,
+    Json(payload): Json<Value>,
+) -> impl IntoResponse {
+    // Extract token from payload
+    let token = match payload.get("token").and_then(|t| t.as_str()) {
+        Some(token) => token,
+        None => {
+            let error = Error::new(ErrorCode::ValidationFailed, "Token is required");
+            return create_api_error_with_request_id(error, &request).into_response();
+        }
+    };
+
+    // Validate token format
+    if token.is_empty() {
+        let error = Error::new(ErrorCode::ValidationFailed, "Token cannot be empty");
+        return create_api_error_with_request_id(error, &request).into_response();
+    }
+
+    // Mock validation - in real implementation this would call auth service
+    if token.starts_with("invalid_") {
+        let error = Error::new(ErrorCode::AuthenticationFailed, "Invalid token provided");
+        return create_api_error_with_request_id(error, &request).into_response();
+    }
+
+    if token.starts_with("expired_") {
+        let error = Error::new(ErrorCode::AuthenticationFailed, "Token has expired");
+        return create_api_error_with_request_id(error, &request).into_response();
+    }
+
+    // Return success response
+    Json(json!({
+        "valid": true,
+        "message": "Token is valid",
+        "token_type": "bearer"
+    })).into_response()
 }

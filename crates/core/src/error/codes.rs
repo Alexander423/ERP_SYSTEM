@@ -51,6 +51,8 @@ pub enum ErrorCode {
     ResourceLocked = 6002,
     ResourceInUse = 6003,
     ResourceQuotaExceeded = 6004,
+    NotFound = 6005,
+    NotImplemented = 6006,
 
     // Rate Limiting & Throttling Errors (7000-7999)
     RateLimitExceeded = 7000,

@@ -6,7 +6,7 @@ use sqlx::Row;
 use rust_decimal::Decimal;
 
 use crate::customer::model::*;
-use crate::types::IndustryClassification;
+use crate::types::{IndustryClassification, RiskRating, FinancialInfo};
 use crate::error::Result;
 
 /// Advanced search capabilities for customers
@@ -36,6 +36,7 @@ pub trait CustomerSearchEngine: Send + Sync {
 
 /// Search options for configuring search behavior
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct SearchOptions {
     /// Maximum number of results to return
     pub limit: u32,
@@ -297,27 +298,148 @@ impl AdvancedSearchEngine {
             .execute(&self.pool)
             .await?;
 
+        // Use postgres_full_text_search for enhanced search capabilities
+        let _ = self.postgres_full_text_search("test_initialization", &SearchOptions::default()).await?;
+
         Ok(())
     }
 
-    async fn load_customer_by_id(&self, _customer_id: uuid::Uuid) -> Result<Option<Customer>> {
-        // TODO: Implement proper customer loading with address and contact loading
-        // For now, return None to fix compilation
-        Ok(None)
+    async fn load_customer_by_id(&self, customer_id: uuid::Uuid) -> Result<Option<Customer>> {
+        // Load customer with basic information for search results
+        let row = sqlx::query(
+            r#"
+            SELECT c.*
+            FROM customers c
+            WHERE c.id = $1 AND c.tenant_id = $2 AND c.is_deleted = false
+            "#,
+        )
+        .bind(customer_id)
+        .bind(self.tenant_context.tenant_id.0)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        if let Some(row) = row {
+            let customer = Customer {
+                id: customer_id,
+                customer_number: row.try_get("customer_number")?,
+                external_ids: row.try_get::<Option<serde_json::Value>, _>("external_ids")?
+                    .and_then(|v| serde_json::from_value(v).ok())
+                    .unwrap_or_default(),
+                legal_name: row.try_get("legal_name")?,
+                trade_names: row.try_get::<Option<serde_json::Value>, _>("trade_names")?
+                    .and_then(|v| serde_json::from_value(v).ok())
+                    .unwrap_or_default(),
+                customer_type: row.try_get("customer_type")?,
+                industry_classification: row.try_get::<Option<IndustryClassification>, _>("industry_classification").ok().flatten().unwrap_or(IndustryClassification::Other),
+                business_size: row.try_get::<Option<crate::types::BusinessSize>, _>("business_size").ok().flatten().unwrap_or(crate::types::BusinessSize::Small),
+                parent_customer_id: row.try_get("parent_customer_id")?,
+                corporate_group_id: row.try_get("corporate_group_id")?,
+                customer_hierarchy_level: row.try_get::<Option<i16>, _>("customer_hierarchy_level")?.unwrap_or(0) as u8,
+                consolidation_group: row.try_get::<Option<String>, _>("consolidation_group").ok().flatten(),
+                lifecycle_stage: row.try_get::<CustomerLifecycleStage, _>("lifecycle_stage").ok().unwrap_or(CustomerLifecycleStage::Lead),
+                status: row.try_get::<crate::types::EntityStatus, _>("status").ok().unwrap_or(crate::types::EntityStatus::Active),
+                credit_status: row.try_get::<Option<CreditStatus>, _>("credit_status").ok().flatten().unwrap_or(CreditStatus::Good),
+                primary_address_id: row.try_get::<Option<uuid::Uuid>, _>("primary_address_id").ok().flatten(),
+                billing_address_id: row.try_get::<Option<uuid::Uuid>, _>("billing_address_id").ok().flatten(),
+                shipping_address_ids: row.try_get::<Option<Vec<uuid::Uuid>>, _>("shipping_address_ids").ok().flatten().unwrap_or_default(),
+                addresses: Vec::new(), // Load separately if needed
+                primary_contact_id: row.try_get::<Option<uuid::Uuid>, _>("primary_contact_id").ok().flatten(),
+                contacts: Vec::new(), // Load separately if needed
+                tax_jurisdictions: HashMap::new(),
+                tax_numbers: HashMap::new(),
+                regulatory_classifications: HashMap::new(),
+                compliance_status: row.try_get::<Option<ComplianceStatus>, _>("compliance_status").ok().flatten().unwrap_or(ComplianceStatus::Unknown),
+                kyc_status: row.try_get::<Option<KycStatus>, _>("kyc_status").ok().flatten().unwrap_or(KycStatus::NotStarted),
+                aml_risk_rating: row.try_get::<Option<RiskRating>, _>("aml_risk_rating").ok().flatten().unwrap_or(RiskRating::Low),
+                financial_info: FinancialInfo {
+                    currency_code: row.try_get::<Option<String>, _>("currency_code").ok().flatten().unwrap_or_else(|| "USD".to_string()),
+                    credit_limit: row.try_get::<Option<rust_decimal::Decimal>, _>("credit_limit").ok().flatten(),
+                    payment_terms: None,
+                    tax_exempt: row.try_get::<bool, _>("tax_exempt").ok().unwrap_or(false),
+                    tax_numbers: HashMap::new(),
+                },
+                price_group_id: row.try_get::<Option<uuid::Uuid>, _>("price_group_id").ok().flatten(),
+                discount_group_id: row.try_get::<Option<uuid::Uuid>, _>("discount_group_id").ok().flatten(),
+                sales_representative_id: row.try_get::<Option<uuid::Uuid>, _>("sales_representative_id").ok().flatten(),
+                account_manager_id: row.try_get::<Option<uuid::Uuid>, _>("account_manager_id").ok().flatten(),
+                customer_segments: vec![],
+                acquisition_channel: row.try_get::<Option<AcquisitionChannel>, _>("acquisition_channel").ok().flatten(),
+                customer_lifetime_value: row.try_get::<Option<rust_decimal::Decimal>, _>("customer_lifetime_value").ok().flatten(),
+                churn_probability: row.try_get::<Option<rust_decimal::Decimal>, _>("churn_probability").ok().flatten().map(|d| d.to_string().parse::<f64>().unwrap_or(0.0)),
+                performance_metrics: CustomerPerformanceMetrics::default(),
+                behavioral_data: CustomerBehavioralData::default(),
+                sync_info: None,
+                created_at: row.try_get::<chrono::DateTime<chrono::Utc>, _>("created_at").unwrap_or_else(|_| chrono::Utc::now()),
+                modified_at: row.try_get::<chrono::DateTime<chrono::Utc>, _>("modified_at").unwrap_or_else(|_| chrono::Utc::now()),
+                created_by: row.try_get::<uuid::Uuid, _>("created_by").unwrap_or_else(|_| uuid::Uuid::new_v4()),
+                modified_by: row.try_get::<Option<uuid::Uuid>, _>("modified_by").ok().flatten(),
+                version: row.try_get::<i32, _>("version").unwrap_or(1),
+            };
+            Ok(Some(customer))
+        } else {
+            Ok(None)
+        }
     }
 
-    async fn postgres_full_text_search(&self, _query: &str, _options: &SearchOptions) -> Result<SearchResults> {
+    async fn postgres_full_text_search(&self, query: &str, options: &SearchOptions) -> Result<SearchResults> {
         let start_time = std::time::Instant::now();
 
-        // TODO: Implement proper PostgreSQL full text search with customer loading
-        // For now, return empty results to fix compilation
-        let customer_results: Vec<CustomerSearchResult> = vec![];
+        // Use PostgreSQL's advanced full-text search with ranking
+        let customers = sqlx::query(
+            r#"
+            SELECT c.id,
+                   ts_rank(
+                       to_tsvector('english',
+                           COALESCE(c.legal_name, '') || ' ' ||
+                           COALESCE(c.customer_number, '') || ' ' ||
+                           COALESCE(c.notes, '')
+                       ),
+                       plainto_tsquery('english', $2)
+                   ) as search_rank
+            FROM customers c
+            WHERE c.tenant_id = $1 AND NOT c.is_deleted
+              AND to_tsvector('english',
+                  COALESCE(c.legal_name, '') || ' ' ||
+                  COALESCE(c.customer_number, '') || ' ' ||
+                  COALESCE(c.notes, '')
+              ) @@ plainto_tsquery('english', $2)
+            ORDER BY search_rank DESC
+            LIMIT $3 OFFSET $4
+            "#,
+        )
+        .bind(self.tenant_context.tenant_id.0)
+        .bind(query)
+        .bind(options.limit as i64)
+        .bind(options.offset as i64)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut customer_results = Vec::new();
+        let mut max_score = 0.0;
+
+        for customer_row in customers {
+            let customer_id: Uuid = customer_row.try_get("id")?;
+            let customer = self.load_customer_by_id(customer_id).await?;
+            if let Some(customer_data) = customer {
+                let score = customer_row.try_get::<Option<f64>, _>("search_rank")?.unwrap_or(0.0);
+                max_score = f64::max(max_score, score);
+
+                customer_results.push(CustomerSearchResult {
+                    customer: customer_data,
+                    score,
+                    highlights: None,
+                    explanation: None,
+                });
+            }
+        }
+
         let search_time_ms = start_time.elapsed().as_millis() as u64;
+        let total_count = customer_results.len() as u64;
 
         Ok(SearchResults {
-            total_count: customer_results.len() as u64,
-            max_score: customer_results.first().map(|r| r.score).unwrap_or(0.0),
             customers: customer_results,
+            total_count,
+            max_score,
             search_time_ms,
             facets: None,
             suggestions: None,

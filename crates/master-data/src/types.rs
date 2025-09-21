@@ -296,3 +296,131 @@ impl Default for SyncInfo {
         }
     }
 }
+
+/// Pagination parameters for API requests
+#[derive(Debug, Clone, Serialize, Deserialize, Validate)]
+pub struct PaginationParams {
+    #[validate(range(min = 1, max = 1000))]
+    pub page: Option<u32>,
+    #[validate(range(min = 1, max = 100))]
+    pub per_page: Option<u32>,
+    pub sort_by: Option<String>,
+    pub sort_order: Option<SortOrder>,
+}
+
+/// Sort order enumeration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum SortOrder {
+    #[serde(rename = "asc")]
+    Ascending,
+    #[serde(rename = "desc")]
+    Descending,
+}
+
+/// Paginated response wrapper
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PaginatedResponse<T> {
+    pub data: Vec<T>,
+    pub pagination: PaginationMeta,
+}
+
+/// Pagination metadata
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PaginationMeta {
+    pub current_page: u32,
+    pub per_page: u32,
+    pub total_items: u64,
+    pub total_pages: u32,
+    pub has_next_page: bool,
+    pub has_previous_page: bool,
+}
+
+impl Default for PaginationParams {
+    fn default() -> Self {
+        Self {
+            page: Some(1),
+            per_page: Some(20),
+            sort_by: None,
+            sort_order: Some(SortOrder::Ascending),
+        }
+    }
+}
+
+// Type aliases for backward compatibility
+pub type PaginationOptions = PaginationParams;
+pub type PaginationResult<T> = PaginatedResponse<T>;
+
+impl PaginationParams {
+    pub fn page(&self) -> u32 {
+        self.page.unwrap_or(1)
+    }
+
+    pub fn per_page(&self) -> u32 {
+        self.per_page.unwrap_or(20)
+    }
+
+    pub fn offset(&self) -> u32 {
+        (self.page() - 1) * self.per_page()
+    }
+
+    pub fn limit(&self) -> u32 {
+        self.per_page()
+    }
+}
+
+impl PaginationMeta {
+    pub fn new(current_page: u32, per_page: u32, total_items: u64) -> Self {
+        let total_pages = ((total_items as f64) / (per_page as f64)).ceil() as u32;
+        let has_next_page = current_page < total_pages;
+        let has_previous_page = current_page > 1;
+
+        Self {
+            current_page,
+            per_page,
+            total_items,
+            total_pages,
+            has_next_page,
+            has_previous_page,
+        }
+    }
+}
+
+impl<T> PaginatedResponse<T> {
+    pub fn new(data: Vec<T>, pagination: PaginationMeta) -> Self {
+        Self { data, pagination }
+    }
+}
+
+/// Tenant context for multi-tenant operations
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TenantContext {
+    pub tenant_id: Uuid,
+    pub tenant_name: String,
+    pub user_id: Uuid,
+    pub permissions: Vec<String>,
+    pub features: Vec<String>,
+}
+
+impl TenantContext {
+    pub fn new(tenant_id: Uuid, tenant_name: String, user_id: Uuid) -> Self {
+        Self {
+            tenant_id,
+            tenant_name,
+            user_id,
+            permissions: Vec::new(),
+            features: Vec::new(),
+        }
+    }
+
+    pub fn has_permission(&self, permission: &str) -> bool {
+        self.permissions.contains(&permission.to_string())
+    }
+
+    pub fn has_feature(&self, feature: &str) -> bool {
+        self.features.contains(&feature.to_string())
+    }
+}
+
+// Aliases for backward compatibility
+pub type PaginationOptions = PaginationParams;
+pub type PaginationResult<T> = PaginatedResponse<T>;

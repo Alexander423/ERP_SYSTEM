@@ -4,7 +4,7 @@
 //! sensitive information while maintaining data utility for analytics and testing.
 
 use async_trait::async_trait;
-use chrono::{DateTime, Utc, Timelike};
+use chrono::Timelike;
 use rand::Rng;
 use regex::Regex;
 use serde::{Deserialize, Serialize};

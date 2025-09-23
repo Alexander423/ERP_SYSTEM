@@ -219,6 +219,11 @@ async fn test_contact_validation() {
         fax: None,
         preferred_language: None,
         communication_preferences: None,
+        website: None,
+        social_media_accounts: None,
+        timezone: None,
+        notes: None,
+        tags: Vec::new(),
         is_primary: true,
         is_active: true,
         audit: AuditFields {

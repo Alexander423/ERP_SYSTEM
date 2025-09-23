@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::customer::model::*;
-use crate::error::{MasterDataError, Result};
+use crate::error::Result;
 
 /// Advanced analytics and reporting engine for customers
 #[async_trait]

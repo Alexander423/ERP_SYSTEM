@@ -9,7 +9,7 @@ use erp_core::{
     database::DatabasePool,
     error::{Error, ErrorCode, Result},
 };
-use sqlx::{Row, Postgres, Encode};
+use sqlx::Row;
 use uuid::Uuid;
 use crate::types::{PaginationOptions, PaginationResult};
 
@@ -321,36 +321,36 @@ impl SupplierRepository for PostgresSupplierRepository {
         pagination: &PaginationOptions,
     ) -> Result<PaginationResult<SupplierSummary>> {
         let mut where_conditions = vec!["s.tenant_id = $1".to_string()];
-        let mut params: Vec<Box<dyn sqlx::Encode<Postgres> + Send + Sync>> = vec![Box::new(tenant_id)];
+        let mut params: Vec<String> = vec![tenant_id.to_string()];
         let mut param_count = 1;
 
         if let Some(query) = &filters.query {
             param_count += 1;
             where_conditions.push(format!("(s.company_name ILIKE ${} OR s.legal_name ILIKE ${} OR s.supplier_code ILIKE ${})", param_count, param_count, param_count));
             let search_term = format!("%{}%", query);
-            params.push(Box::new(search_term));
+            params.push(search_term);
         }
 
         if let Some(status) = &filters.status {
             param_count += 1;
             where_conditions.push(format!("s.status = ${}", param_count));
-            params.push(Box::new(status.clone()));
+            params.push(format!("{:?}", status).to_lowercase());
         }
 
         if let Some(category) = &filters.category {
             param_count += 1;
             where_conditions.push(format!("s.category = ${}", param_count));
-            params.push(Box::new(category.clone()));
+            params.push(format!("{:?}", category).to_lowercase());
         }
 
         if let Some(min_rating) = filters.min_rating {
             param_count += 1;
             where_conditions.push(format!("s.rating >= ${}", param_count));
-            params.push(Box::new(min_rating));
+            params.push(min_rating.to_string());
         }
 
         let where_clause = where_conditions.join(" AND ");
-        let offset = (pagination.page - 1) * pagination.limit;
+        let offset = (pagination.page() - 1) * pagination.limit();
 
         let count_query = format!("SELECT COUNT(*) FROM suppliers s WHERE {}", where_clause);
         let data_query = format!(
@@ -368,13 +368,13 @@ impl SupplierRepository for PostgresSupplierRepository {
             ORDER BY s.created_at DESC
             LIMIT {} OFFSET {}
             "#,
-            where_clause, pagination.limit, offset
+            where_clause, pagination.limit(), offset
         );
 
         // Execute count query
         let mut count_query_builder = sqlx::query_scalar::<_, i64>(&count_query);
         for param in &params {
-            count_query_builder = count_query_builder.bind(param.as_ref());
+            count_query_builder = count_query_builder.bind(param);
         }
         let total = count_query_builder
             .fetch_one(self.get_pool())
@@ -384,7 +384,7 @@ impl SupplierRepository for PostgresSupplierRepository {
         // Execute data query
         let mut data_query_builder = sqlx::query(&data_query);
         for param in &params {
-            data_query_builder = data_query_builder.bind(param.as_ref());
+            data_query_builder = data_query_builder.bind(param);
         }
         let rows = data_query_builder
             .fetch_all(self.get_pool())
@@ -409,9 +409,9 @@ impl SupplierRepository for PostgresSupplierRepository {
         Ok(PaginationResult {
             items,
             total,
-            page: pagination.page,
-            limit: pagination.limit,
-            total_pages: (total as f64 / pagination.limit as f64).ceil() as i64,
+            page: pagination.page() as i64,
+            limit: pagination.limit() as i64,
+            total_pages: (total as f64 / pagination.limit() as f64).ceil() as i64,
         })
     }
 

@@ -202,7 +202,7 @@ pub struct StockTransfer {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, sqlx::Type)]
 #[sqlx(type_name = "transfer_status", rename_all = "snake_case")]
 pub enum TransferStatus {
     Requested,
@@ -212,6 +212,7 @@ pub enum TransferStatus {
     PartiallyReceived,
     Completed,
     Cancelled,
+    Pending,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type)]
@@ -288,7 +289,7 @@ pub struct CycleCount {
     pub created_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, sqlx::Type)]
 #[sqlx(type_name = "count_status", rename_all = "snake_case")]
 pub enum CountStatus {
     Scheduled,
@@ -315,6 +316,11 @@ pub struct InventoryReservation {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub notes: Option<String>,
+
+    // Additional audit fields needed by the service layer
+    pub created_by: Uuid,
+    pub released_at: Option<DateTime<Utc>>,
+    pub released_by: Option<Uuid>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type)]
@@ -340,12 +346,20 @@ pub struct PurchaseOrder {
     pub id: Uuid,
     pub order_number: String,
     pub supplier_id: Uuid,
+    pub supplier_name: String,
     pub location_id: Uuid,
     pub status: OrderStatus,
     pub order_date: DateTime<Utc>,
     pub expected_delivery_date: Option<DateTime<Utc>>,
+    pub actual_delivery_date: Option<DateTime<Utc>>,
     pub total_amount: f64,
     pub currency: String,
+    pub payment_terms: Option<String>,
+    pub shipping_terms: Option<String>,
+    pub priority: Option<String>,
+    pub approved_by: Option<Uuid>,
+    pub tracking_number: Option<String>,
+    pub notes: Option<String>,
     pub created_by: Uuid,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -374,6 +388,7 @@ pub enum OrderStatus {
     PartiallyReceived,
     Received,
     Cancelled,
+    Pending,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]

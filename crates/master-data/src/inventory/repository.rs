@@ -4,8 +4,9 @@
 //! for multi-location scenarios and advanced analytics.
 
 use crate::inventory::model::*;
+use crate::product::model::AlertStatus;
 use crate::types::{ReservationType, OrderPriority, ValuationMethod};
-use crate::error::{MasterDataError, Result};
+use crate::error::Result;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -326,8 +327,8 @@ impl InventoryRepository for PostgresInventoryRepository {
                 li.lead_time_days,
                 li.storage_cost_per_unit,
                 li.handling_cost_per_unit,
-                li.last_counted_at,
-                li.cycle_count_frequency_days,
+                last_counted_at,
+                cycle_count_frequency_days,
                 li.abc_classification as "abc_classification: ABCClassification",
                 li.movement_velocity as "movement_velocity: MovementVelocity",
                 li.seasonal_factors,
@@ -367,8 +368,8 @@ impl InventoryRepository for PostgresInventoryRepository {
                 li.lead_time_days,
                 li.storage_cost_per_unit,
                 li.handling_cost_per_unit,
-                li.last_counted_at,
-                li.cycle_count_frequency_days,
+                last_counted_at,
+                cycle_count_frequency_days,
                 li.abc_classification,
                 li.movement_velocity,
                 li.seasonal_factors,

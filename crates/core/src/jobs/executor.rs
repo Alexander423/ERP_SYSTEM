@@ -470,8 +470,9 @@ mod tests {
         let context = JobContext {
             job_id: JobId::new(),
             attempt: 1,
-            max_retries: 3,
-            started_at: std::time::SystemTime::now(),
+            max_attempts: 3,
+            metadata: HashMap::new(),
+            started_at: chrono::Utc::now(),
         };
 
         let result = handler.handle(&job_data, &context).await;

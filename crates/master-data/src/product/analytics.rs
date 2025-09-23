@@ -3,10 +3,9 @@
 //! Advanced analytics engine providing AI-powered insights, predictive analytics,
 //! market intelligence, and performance optimization for product management.
 
-use crate::product::model::*;
 use chrono::{DateTime, Utc, Duration};
 use serde::{Deserialize, Serialize};
-use sqlx::{PgPool, FromRow};
+use sqlx::PgPool;
 use std::collections::HashMap;
 use uuid::Uuid;
 use anyhow::Result;
@@ -148,7 +147,7 @@ pub struct PredictiveModel {
     pub parameters: HashMap<String, f64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum ModelType {
     DemandForecasting,
     PriceOptimization,
@@ -442,7 +441,8 @@ pub enum ImprovementStatus {
     Cancelled,
 }
 
-pub trait ProductAnalyticsEngine {
+#[async_trait::async_trait]
+pub trait ProductAnalyticsEngine: Send + Sync {
     async fn calculate_performance_metrics(
         &self,
         product_id: Uuid,
@@ -514,6 +514,37 @@ pub trait ProductAnalyticsEngine {
         product_id: Uuid,
         report_type: ReportType,
     ) -> Result<ProductInsightsReport>;
+
+    // Additional methods needed by service layer
+    async fn generate_performance_report(
+        &self,
+        product_id: Uuid,
+        analytics: &serde_json::Value,
+        analysis_period: &crate::product::service::AnalysisPeriod,
+    ) -> Result<crate::product::service::ProductPerformanceReport>;
+
+    async fn generate_analytics_report(
+        &self,
+        product_id: Uuid,
+        analytics: &serde_json::Value,
+        period: &crate::product::service::AnalysisPeriod,
+    ) -> Result<crate::product::service::ProductAnalyticsReport>;
+
+    async fn calculate_inventory_turnover(
+        &self,
+        tenant_id: Uuid,
+    ) -> Result<Vec<crate::product::service::TurnoverAnalysis>>;
+
+    async fn generate_profitability_report(
+        &self,
+        tenant_id: Uuid,
+        category_id: Option<Uuid>,
+    ) -> Result<crate::product::service::ProfitabilityReport>;
+
+    async fn analyze_market_share(
+        &self,
+        product_id: Uuid,
+    ) -> Result<crate::product::service::MarketShareAnalysis>;
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1139,14 +1170,32 @@ impl ProductAnalyticsEngine for DefaultProductAnalyticsEngine {
         let analytics = SustainabilityAnalytics {
             product_id,
             carbon_footprint: crate::product::model::CarbonFootprint {
-                total_co2_kg: 25.5,
-                scope1_emissions: 10.0,
-                scope2_emissions: 8.5,
-                scope3_emissions: 7.0,
-                carbon_intensity: 0.85,
-                offset_credits: 2.0,
-                net_emissions: 23.5,
-                benchmarks: HashMap::new(),
+                id: Uuid::new_v4(),
+                product_id,
+                tenant_id: Uuid::new_v4(),
+                raw_materials_emissions: 10.0,
+                manufacturing_emissions: 8.5,
+                packaging_emissions: 2.0,
+                transportation_emissions: 3.0,
+                usage_emissions: 7.0,
+                end_of_life_emissions: 2.0,
+                total_emissions: 32.5,
+                calculation_method: "LCA Standard".to_string(),
+                data_sources: vec!["Primary data".to_string()],
+                uncertainty_percentage: Some(5.0),
+                verification_status: "verified".to_string(),
+                verified_by: Some("Auditor".to_string()),
+                verification_date: Some(Utc::now()),
+                reduction_target_percentage: Some(20.0),
+                target_deadline: Some(Utc::now()),
+                current_reduction_percentage: 5.0,
+                offset_credits_purchased: 2.0,
+                offset_credits_cost: Some(500),
+                offset_projects: Some(vec!["Forest conservation".to_string()]),
+                created_at: Utc::now(),
+                updated_at: Utc::now(),
+                created_by: Uuid::new_v4(),
+                updated_by: Uuid::new_v4(),
             },
             water_usage: WaterUsage {
                 total_liters: 150.0,
@@ -1554,5 +1603,77 @@ impl ProductAnalyticsEngine for DefaultProductAnalyticsEngine {
         };
 
         Ok(report)
+    }
+
+    // Additional methods needed by service layer
+    async fn generate_performance_report(
+        &self,
+        product_id: Uuid,
+        _analytics: &serde_json::Value,
+        _analysis_period: &crate::product::service::AnalysisPeriod,
+    ) -> Result<crate::product::service::ProductPerformanceReport> {
+        // Simplified implementation - would normally use the analytics data
+        Ok(crate::product::service::ProductPerformanceReport {
+            product_id,
+            period_start: chrono::Utc::now() - chrono::Duration::days(30),
+            period_end: chrono::Utc::now(),
+            revenue: 0.0,
+            units_sold: 0,
+            profit_margin: 0.0,
+            market_share: 0.0,
+            customer_satisfaction: 0.0,
+        })
+    }
+
+    async fn generate_analytics_report(
+        &self,
+        product_id: Uuid,
+        _analytics: &serde_json::Value,
+        _period: &crate::product::service::AnalysisPeriod,
+    ) -> Result<crate::product::service::ProductAnalyticsReport> {
+        // Simplified implementation
+        Ok(crate::product::service::ProductAnalyticsReport {
+            product_id,
+            metrics: std::collections::HashMap::new(),
+            insights: vec![],
+            recommendations: vec![],
+        })
+    }
+
+    async fn calculate_inventory_turnover(
+        &self,
+        _tenant_id: Uuid,
+    ) -> Result<Vec<crate::product::service::TurnoverAnalysis>> {
+        // Simplified implementation
+        Ok(vec![])
+    }
+
+    async fn generate_profitability_report(
+        &self,
+        _tenant_id: Uuid,
+        _category_id: Option<Uuid>,
+    ) -> Result<crate::product::service::ProfitabilityReport> {
+        // Simplified implementation
+        Ok(crate::product::service::ProfitabilityReport {
+            total_revenue: 0.0,
+            total_cost: 0.0,
+            gross_profit: 0.0,
+            profit_margin: 0.0,
+            category_breakdown: std::collections::HashMap::new(),
+        })
+    }
+
+    async fn analyze_market_share(
+        &self,
+        product_id: Uuid,
+    ) -> Result<crate::product::service::MarketShareAnalysis> {
+        // Simplified implementation
+        Ok(crate::product::service::MarketShareAnalysis {
+            product_id,
+            current_share: 0.0,
+            market_size: 0.0,
+            competitor_shares: std::collections::HashMap::new(),
+            trend: crate::product::service::MarketTrend::Stable,
+        })
     }
 }

@@ -7,10 +7,9 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use uuid::Uuid;
-use std::collections::HashMap;
 
 /// Product status enumeration
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, sqlx::Type)]
 #[sqlx(type_name = "product_status", rename_all = "snake_case")]
 pub enum ProductStatus {
     /// Product is active and available for sale
@@ -87,6 +86,39 @@ impl Default for UnitOfMeasure {
     fn default() -> Self {
         Self::Piece
     }
+}
+
+/// Batch status enumeration
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, sqlx::Type)]
+#[sqlx(type_name = "batch_status", rename_all = "snake_case")]
+pub enum BatchStatus {
+    Active,
+    Quarantine,
+    Released,
+    Rejected,
+    Expired,
+    Recalled,
+}
+
+/// Recall status enumeration
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, sqlx::Type)]
+#[sqlx(type_name = "recall_status", rename_all = "snake_case")]
+pub enum RecallStatus {
+    NoRecall,
+    Pending,
+    Active,
+    Completed,
+    Cancelled,
+}
+
+/// Alert status enumeration
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, sqlx::Type)]
+#[sqlx(type_name = "alert_status", rename_all = "snake_case")]
+pub enum AlertStatus {
+    Active,
+    Acknowledged,
+    Resolved,
+    Dismissed,
 }
 
 /// Main product entity

@@ -9,7 +9,7 @@ use sqlx::FromRow;
 use uuid::Uuid;
 
 /// Supplier status enumeration
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, sqlx::Type)]
 #[sqlx(type_name = "supplier_status", rename_all = "snake_case")]
 pub enum SupplierStatus {
     /// Supplier is active and can be used for procurement

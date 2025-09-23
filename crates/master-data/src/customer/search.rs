@@ -6,7 +6,7 @@ use sqlx::Row;
 use rust_decimal::Decimal;
 
 use crate::customer::model::*;
-use crate::types::{IndustryClassification, RiskRating, FinancialInfo};
+use crate::types::{IndustryClassification, RiskRating, FinancialInfo, AuditFields, SyncInfo};
 use crate::error::Result;
 
 /// Advanced search capabilities for customers
@@ -345,9 +345,9 @@ impl AdvancedSearchEngine {
                 addresses: Vec::new(), // Load separately if needed
                 primary_contact_id: row.try_get::<Option<uuid::Uuid>, _>("primary_contact_id").ok().flatten(),
                 contacts: Vec::new(), // Load separately if needed
-                tax_jurisdictions: HashMap::new(),
+                tax_jurisdictions: Vec::new(),
                 tax_numbers: HashMap::new(),
-                regulatory_classifications: HashMap::new(),
+                regulatory_classifications: Vec::new(),
                 compliance_status: row.try_get::<Option<ComplianceStatus>, _>("compliance_status").ok().flatten().unwrap_or(ComplianceStatus::Unknown),
                 kyc_status: row.try_get::<Option<KycStatus>, _>("kyc_status").ok().flatten().unwrap_or(KycStatus::NotStarted),
                 aml_risk_rating: row.try_get::<Option<RiskRating>, _>("aml_risk_rating").ok().flatten().unwrap_or(RiskRating::Low),
@@ -368,12 +368,19 @@ impl AdvancedSearchEngine {
                 churn_probability: row.try_get::<Option<rust_decimal::Decimal>, _>("churn_probability").ok().flatten().map(|d| d.to_string().parse::<f64>().unwrap_or(0.0)),
                 performance_metrics: CustomerPerformanceMetrics::default(),
                 behavioral_data: CustomerBehavioralData::default(),
-                sync_info: None,
-                created_at: row.try_get::<chrono::DateTime<chrono::Utc>, _>("created_at").unwrap_or_else(|_| chrono::Utc::now()),
-                modified_at: row.try_get::<chrono::DateTime<chrono::Utc>, _>("modified_at").unwrap_or_else(|_| chrono::Utc::now()),
-                created_by: row.try_get::<uuid::Uuid, _>("created_by").unwrap_or_else(|_| uuid::Uuid::new_v4()),
-                modified_by: row.try_get::<Option<uuid::Uuid>, _>("modified_by").ok().flatten(),
-                version: row.try_get::<i32, _>("version").unwrap_or(1),
+                sync_info: SyncInfo::default(),
+                custom_fields: HashMap::new(),
+                contract_ids: Vec::new(),
+                audit: AuditFields {
+                    created_at: row.try_get::<chrono::DateTime<chrono::Utc>, _>("created_at").unwrap_or_else(|_| chrono::Utc::now()),
+                    modified_at: row.try_get::<chrono::DateTime<chrono::Utc>, _>("modified_at").unwrap_or_else(|_| chrono::Utc::now()),
+                    created_by: row.try_get::<uuid::Uuid, _>("created_by").unwrap_or_else(|_| uuid::Uuid::new_v4()),
+                    modified_by: row.try_get::<uuid::Uuid, _>("modified_by").unwrap_or_else(|_| uuid::Uuid::new_v4()),
+                    version: row.try_get::<i32, _>("version").unwrap_or(1),
+                    is_deleted: row.try_get::<bool, _>("is_deleted").unwrap_or(false),
+                    deleted_at: row.try_get::<Option<chrono::DateTime<chrono::Utc>>, _>("deleted_at").ok().flatten(),
+                    deleted_by: row.try_get::<Option<uuid::Uuid>, _>("deleted_by").ok().flatten(),
+                },
             };
             Ok(Some(customer))
         } else {

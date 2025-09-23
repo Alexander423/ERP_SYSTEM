@@ -89,6 +89,9 @@ pub enum MasterDataError {
 
     #[error("Not found: {0}")]
     NotFoundError(String),
+
+    #[error("Anyhow error: {0}")]
+    Anyhow(#[from] anyhow::Error),
 }
 
 pub type Result<T> = std::result::Result<T, MasterDataError>;

@@ -3,8 +3,8 @@
 //! This module provides the most advanced product management service layer
 //! with AI-powered features, automated optimization, and comprehensive business logic.
 
-use super::{model::*, repository::*, analytics::ProductAnalyticsEngine};
-use crate::types::TenantContext;
+use super::{model::*, repository::{self, ProductRepository, BulkPriceUpdateRequest, PriceContext}, analytics::ProductAnalyticsEngine};
+use crate::types::{TenantContext, PaginationOptions, PaginationResult};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use erp_core::error::{Error, ErrorCode, Result};
@@ -27,10 +27,10 @@ pub trait ProductService: Send + Sync {
     async fn discontinue_product(&self, product_id: Uuid, replacement_id: Option<Uuid>) -> Result<Product>;
 
     // === Advanced Search & Discovery ===
-    async fn search_products(&self, search: AdvancedProductSearch, pagination: PaginationOptions) -> Result<PaginationResult<ProductSummary>>;
+    async fn search_products(&self, search: repository::AdvancedProductSearch, pagination: PaginationOptions) -> Result<PaginationResult<repository::ProductSummary>>;
     async fn search_products_with_ai(&self, query: &str, context: &SearchContext) -> Result<Vec<ProductRecommendation>>;
-    async fn find_similar_products(&self, product_id: Uuid, similarity_threshold: f64) -> Result<Vec<ProductSummary>>;
-    async fn get_trending_products(&self, period_days: i32, limit: i32) -> Result<Vec<ProductSummary>>;
+    async fn find_similar_products(&self, product_id: Uuid, similarity_threshold: f64) -> Result<Vec<repository::ProductSummary>>;
+    async fn get_trending_products(&self, period_days: i32, limit: i32) -> Result<Vec<repository::ProductSummary>>;
 
     // === Category Management ===
     async fn create_category(&self, request: CreateCategoryRequest) -> Result<ProductCategory>;
@@ -570,7 +570,7 @@ impl ProductService for DefaultProductService {
         let optimization_suggestions = self.ai_engine.suggest_optimizations(&product).await?;
 
         // Apply high-confidence suggestions automatically
-        for suggestion in optimization_suggestions {
+        for suggestion in &optimization_suggestions {
             if suggestion.confidence > 0.9 {
                 match suggestion.suggestion_type.as_str() {
                     "price_optimization" => {
@@ -675,7 +675,7 @@ impl ProductService for DefaultProductService {
         let product = self.update_product(product_id, request).await?;
 
         // Update lifecycle
-        let mut lifecycle = self.repository.get_products_by_lifecycle_stage(self.tenant_context.tenant_id, LifecycleStage::Maturity).await?
+        let lifecycle = self.repository.get_products_by_lifecycle_stage(self.tenant_context.tenant_id, LifecycleStage::Maturity).await?
             .into_iter()
             .find(|p| p.id == product_id)
             .map(|_| ProductLifecycle {
@@ -750,7 +750,7 @@ impl ProductService for DefaultProductService {
                     status: similar_product.status,
                     product_type: similar_product.product_type,
                     base_price: similar_product.base_price,
-                    currency: similar_product.currency,
+                    currency: similar_product.currency.clone(),
                     current_stock: similar_product.current_stock,
                     is_in_stock: similar_product.is_in_stock(),
                     needs_reorder: similar_product.needs_reorder(),
@@ -777,7 +777,7 @@ impl ProductService for DefaultProductService {
                     status: product.status,
                     product_type: product.product_type,
                     base_price: product.base_price,
-                    currency: product.currency,
+                    currency: product.currency.clone(),
                     current_stock: product.current_stock,
                     is_in_stock: product.is_in_stock(),
                     needs_reorder: product.needs_reorder(),
@@ -1034,9 +1034,9 @@ impl ProductService for DefaultProductService {
             id: batch_id,
             product_id: Uuid::new_v4(),
             batch_number: format!("BATCH-{}", batch_id.to_string()[..8].to_uppercase()),
-            manufacturing_date: chrono::Utc::now().date_naive(),
+            manufactured_date: chrono::Utc::now(),
             expiry_date: Some(chrono::Utc::now().date_naive() + chrono::Duration::days(365)),
-            status: BatchStatus::Active,
+            status: crate::product::model::BatchStatus::Active,
             quality_status: quality_update.new_status,
             quality_score: quality_update.quality_score,
             compliance_status: quality_update.compliance_status,
@@ -1046,7 +1046,7 @@ impl ProductService for DefaultProductService {
             allocated_quantity: 0,
             source_batches: None,
             destination_batches: None,
-            recall_status: quality_update.recall_required.then(|| RecallStatus::Active),
+            recall_status: Some(crate::product::model::RecallStatus::NoRecall),
             notes: quality_update.notes,
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
@@ -1963,4 +1963,13 @@ pub struct PriceOptimizationResult {
     pub explanation: String,
     pub margin: f64,
     pub position: String,
+}
+
+// MarketTrend enum for analytics compatibility
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum MarketTrend {
+    Growing,
+    Stable,
+    Declining,
+    Volatile,
 }

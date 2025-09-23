@@ -355,7 +355,16 @@ impl Default for PaginationParams {
 
 // Type aliases for backward compatibility
 pub type PaginationOptions = PaginationParams;
-pub type PaginationResult<T> = PaginatedResponse<T>;
+
+/// Legacy pagination result format (keeping for compatibility)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PaginationResult<T> {
+    pub items: Vec<T>,
+    pub total: i64,
+    pub page: i64,
+    pub limit: i64,
+    pub total_pages: i64,
+}
 
 impl PaginationParams {
     pub fn page(&self) -> u32 {
@@ -366,12 +375,12 @@ impl PaginationParams {
         self.per_page.unwrap_or(20)
     }
 
-    pub fn offset(&self) -> u32 {
-        (self.page() - 1) * self.per_page()
-    }
-
     pub fn limit(&self) -> u32 {
         self.per_page()
+    }
+
+    pub fn offset(&self) -> u32 {
+        (self.page() - 1) * self.per_page()
     }
 }
 

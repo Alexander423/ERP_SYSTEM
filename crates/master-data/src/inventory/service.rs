@@ -5,8 +5,7 @@
 
 use crate::inventory::model::*;
 use crate::inventory::repository::InventoryRepository;
-use crate::types::{ValuationMethod, OrderPriority, ReservationType};
-use crate::error::MasterDataError;
+use crate::types::{ValuationMethod, ReservationType};
 use anyhow::Result;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc, Duration};
@@ -36,6 +35,7 @@ pub struct CreateReservationRequest {
     pub reference_id: Uuid,
     pub priority: ReservationPriority,
     pub reserved_until: DateTime<Utc>,
+    pub notes: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -721,15 +721,15 @@ impl InventoryService for DefaultInventoryService {
                     supplier_id,
                     supplier_name: "Supplier Name".to_string(),
                     location_id,
-                    order_status: OrderStatus::Draft,
+                    status: OrderStatus::Draft,
                     order_date: Utc::now(),
                     expected_delivery_date: Some(Utc::now() + Duration::days(14)),
                     actual_delivery_date: None,
                     total_amount,
                     currency: "USD".to_string(),
-                    payment_terms: "Net 30".to_string(),
-                    shipping_terms: "FOB".to_string(),
-                    priority: OrderPriority::Normal,
+                    payment_terms: Some("Net 30".to_string()),
+                    shipping_terms: Some("FOB".to_string()),
+                    priority: Some("Normal".to_string()),
                     created_by: Uuid::new_v4(),
                     approved_by: None,
                     tracking_number: None,

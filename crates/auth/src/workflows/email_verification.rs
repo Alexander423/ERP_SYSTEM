@@ -498,7 +498,7 @@ mod tests {
         pub fn get_verification_emails(&self) -> Vec<erp_core::jobs::types::QueuedJob> {
             self.queued_jobs.lock().unwrap()
                 .iter()
-                .filter(|job| job.data.contains("verification"))
+                .filter(|job| job.data.to_string().contains("verification"))
                 .cloned()
                 .collect()
         }
@@ -507,7 +507,7 @@ mod tests {
         pub fn get_welcome_emails(&self) -> Vec<erp_core::jobs::types::QueuedJob> {
             self.queued_jobs.lock().unwrap()
                 .iter()
-                .filter(|job| job.data.contains("welcome"))
+                .filter(|job| job.data.to_string().contains("welcome"))
                 .cloned()
                 .collect()
         }

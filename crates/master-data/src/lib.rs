@@ -12,6 +12,7 @@ pub mod security;
 // Common types and utilities
 pub mod types;
 pub mod error;
+pub mod utils;
 
 // Re-exports for easy access
 pub use customer::{
@@ -44,3 +45,4 @@ pub use customer::{
 
 pub use error::{MasterDataError, Result};
 pub use types::*;
+pub use utils::*;

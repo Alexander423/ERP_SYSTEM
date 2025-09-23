@@ -4,13 +4,12 @@
 //! full-text search, analytics integration, and multi-tenant support.
 
 use crate::product::model::*;
+use crate::utils::*;
 use erp_core::database::DatabasePool;
 use erp_core::error::{Error, ErrorCode, Result};
-use anyhow::anyhow;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::{postgres::PgRow, query_builder::QueryBuilder, Postgres, Row};
 use uuid::Uuid;
 
 /// Advanced product search criteria
@@ -189,23 +188,21 @@ impl PostgresProductRepository {
 impl ProductRepository for PostgresProductRepository {
     async fn create_product(&self, product: &Product) -> Result<Product> {
         // Simplified implementation - would normally handle all fields
-        let created = sqlx::query_as!(
-            Product,
+        let row = sqlx::query!(
             r#"
             INSERT INTO products (
                 id, tenant_id, sku, name, description, category_id,
                 product_type, status, base_price, currency, created_at, updated_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7::product_type, $8::product_status, $9, $10, $11, $12)
             RETURNING
                 id, tenant_id, sku, name, description, short_description, category_id,
-                product_type as "product_type: ProductType",
-                status as "status: ProductStatus",
-                tags, unit_of_measure as "unit_of_measure: UnitOfMeasure",
+                product_type::text as product_type, status::text as status, tags, unit_of_measure::text as unit_of_measure,
                 weight, dimensions_length, dimensions_width, dimensions_height,
                 base_price, currency, cost_price, list_price, is_tracked,
                 current_stock, min_stock_level, max_stock_level, reorder_point,
                 primary_supplier_id, lead_time_days, barcode, brand, manufacturer,
-                model_number, warranty_months, slug, meta_title, meta_description,
+                model_number, warranty_months,
+                slug, meta_title, meta_description,
                 is_featured, is_digital_download, notes, created_at, updated_at,
                 created_by, updated_by
             "#,
@@ -215,8 +212,8 @@ impl ProductRepository for PostgresProductRepository {
             product.name,
             product.description,
             product.category_id,
-            product.product_type as ProductType,
-            product.status as ProductStatus,
+            &format!("{:?}", product.product_type).to_lowercase(),
+            &format!("{:?}", product.status).to_lowercase(),
             product.base_price,
             product.currency,
             product.created_at,
@@ -226,23 +223,89 @@ impl ProductRepository for PostgresProductRepository {
         .await
         .map_err(|e| Error::new(ErrorCode::DatabaseError, format!("Failed to create product: {}", e)))?;
 
+        let created = Product {
+            id: row.id,
+            tenant_id: row.tenant_id,
+            sku: row.sku,
+            name: row.name,
+            description: row.description,
+            short_description: row.short_description,
+            category_id: row.category_id,
+            product_type: match row.product_type.as_deref() {
+                Some("physical") => ProductType::Physical,
+                Some("digital") => ProductType::Digital,
+                Some("service") => ProductType::Service,
+                Some("bundle") => ProductType::Bundle,
+                Some("subscription") => ProductType::Subscription,
+                _ => ProductType::Physical,
+            },
+            status: match row.status.as_deref() {
+                Some("active") => ProductStatus::Active,
+                Some("inactive") => ProductStatus::Inactive,
+                Some("development") => ProductStatus::Development,
+                Some("discontinued") => ProductStatus::Discontinued,
+                Some("planned") => ProductStatus::Planned,
+                _ => ProductStatus::Development,
+            },
+            tags: row.tags,
+            unit_of_measure: match row.unit_of_measure.as_deref() {
+                Some("piece") => UnitOfMeasure::Piece,
+                Some("kilogram") => UnitOfMeasure::Kilogram,
+                Some("liter") => UnitOfMeasure::Liter,
+                Some("meter") => UnitOfMeasure::Meter,
+                Some("square_meter") => UnitOfMeasure::SquareMeter,
+                Some("cubic_meter") => UnitOfMeasure::CubicMeter,
+                Some("hour") => UnitOfMeasure::Hour,
+                Some("day") => UnitOfMeasure::Day,
+                _ => UnitOfMeasure::Piece,
+            },
+            weight: decimal_to_f64(row.weight),
+            dimensions_length: decimal_to_f64(row.dimensions_length),
+            dimensions_width: decimal_to_f64(row.dimensions_width),
+            dimensions_height: decimal_to_f64(row.dimensions_height),
+            base_price: row.base_price.unwrap_or(0),
+            currency: row.currency,
+            cost_price: row.cost_price,
+            list_price: row.list_price,
+            is_tracked: row.is_tracked.unwrap_or(false),
+            current_stock: row.current_stock,
+            min_stock_level: row.min_stock_level,
+            max_stock_level: row.max_stock_level,
+            reorder_point: row.reorder_point,
+            primary_supplier_id: row.primary_supplier_id,
+            lead_time_days: row.lead_time_days,
+            barcode: row.barcode,
+            brand: row.brand,
+            manufacturer: row.manufacturer,
+            model_number: row.model_number,
+            warranty_months: row.warranty_months,
+            slug: row.slug,
+            meta_title: row.meta_title,
+            meta_description: row.meta_description,
+            is_featured: row.is_featured.unwrap_or(false),
+            is_digital_download: row.is_digital_download.unwrap_or(false),
+            notes: row.notes,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+            created_by: row.created_by,
+            updated_by: row.updated_by,
+        };
+
         Ok(created)
     }
 
     async fn get_product_by_id(&self, tenant_id: Uuid, product_id: Uuid) -> Result<Option<Product>> {
-        let product = sqlx::query_as!(
-            Product,
+        let row = sqlx::query!(
             r#"
             SELECT
                 id, tenant_id, sku, name, description, short_description, category_id,
-                product_type as "product_type: ProductType",
-                status as "status: ProductStatus",
-                tags, unit_of_measure as "unit_of_measure: UnitOfMeasure",
+                product_type::text as product_type, status::text as status, tags, unit_of_measure::text as unit_of_measure,
                 weight, dimensions_length, dimensions_width, dimensions_height,
                 base_price, currency, cost_price, list_price, is_tracked,
                 current_stock, min_stock_level, max_stock_level, reorder_point,
                 primary_supplier_id, lead_time_days, barcode, brand, manufacturer,
-                model_number, warranty_months, slug, meta_title, meta_description,
+                model_number, warranty_months,
+                slug, meta_title, meta_description,
                 is_featured, is_digital_download, notes, created_at, updated_at,
                 created_by, updated_by
             FROM products
@@ -254,6 +317,74 @@ impl ProductRepository for PostgresProductRepository {
         .fetch_optional(self.get_pool())
         .await
         .map_err(|e| Error::new(ErrorCode::DatabaseError, format!("Failed to get product: {}", e)))?;
+
+        let product = row.map(|r| Product {
+            id: r.id,
+            tenant_id: r.tenant_id,
+            sku: r.sku,
+            name: r.name,
+            description: r.description,
+            short_description: r.short_description,
+            category_id: r.category_id,
+            product_type: match r.product_type.as_deref() {
+                Some("physical") => ProductType::Physical,
+                Some("digital") => ProductType::Digital,
+                Some("service") => ProductType::Service,
+                Some("bundle") => ProductType::Bundle,
+                Some("subscription") => ProductType::Subscription,
+                _ => ProductType::Physical,
+            },
+            status: match r.status.as_deref() {
+                Some("active") => ProductStatus::Active,
+                Some("inactive") => ProductStatus::Inactive,
+                Some("development") => ProductStatus::Development,
+                Some("discontinued") => ProductStatus::Discontinued,
+                Some("planned") => ProductStatus::Planned,
+                _ => ProductStatus::Development,
+            },
+            tags: r.tags,
+            unit_of_measure: match r.unit_of_measure.as_deref() {
+                Some("piece") => UnitOfMeasure::Piece,
+                Some("kilogram") => UnitOfMeasure::Kilogram,
+                Some("liter") => UnitOfMeasure::Liter,
+                Some("meter") => UnitOfMeasure::Meter,
+                Some("square_meter") => UnitOfMeasure::SquareMeter,
+                Some("cubic_meter") => UnitOfMeasure::CubicMeter,
+                Some("hour") => UnitOfMeasure::Hour,
+                Some("day") => UnitOfMeasure::Day,
+                _ => UnitOfMeasure::Piece,
+            },
+            weight: decimal_to_f64(r.weight),
+            dimensions_length: decimal_to_f64(r.dimensions_length),
+            dimensions_width: decimal_to_f64(r.dimensions_width),
+            dimensions_height: decimal_to_f64(r.dimensions_height),
+            base_price: r.base_price.unwrap_or(0),
+            currency: r.currency,
+            cost_price: r.cost_price,
+            list_price: r.list_price,
+            is_tracked: r.is_tracked.unwrap_or(false),
+            current_stock: r.current_stock,
+            min_stock_level: r.min_stock_level,
+            max_stock_level: r.max_stock_level,
+            reorder_point: r.reorder_point,
+            primary_supplier_id: r.primary_supplier_id,
+            lead_time_days: r.lead_time_days,
+            barcode: r.barcode,
+            brand: r.brand,
+            manufacturer: r.manufacturer,
+            model_number: r.model_number,
+            warranty_months: r.warranty_months,
+            slug: r.slug,
+            meta_title: r.meta_title,
+            meta_description: r.meta_description,
+            is_featured: r.is_featured.unwrap_or(false),
+            is_digital_download: r.is_digital_download.unwrap_or(false),
+            notes: r.notes,
+            created_at: r.created_at,
+            updated_at: r.updated_at,
+            created_by: r.created_by,
+            updated_by: r.updated_by,
+        });
 
         Ok(product)
     }
@@ -271,7 +402,8 @@ impl ProductRepository for PostgresProductRepository {
                 base_price, currency, cost_price, list_price, is_tracked,
                 current_stock, min_stock_level, max_stock_level, reorder_point,
                 primary_supplier_id, lead_time_days, barcode, brand, manufacturer,
-                model_number, warranty_months, slug, meta_title, meta_description,
+                model_number, warranty_months,
+                slug, meta_title, meta_description,
                 is_featured, is_digital_download, notes, created_at, updated_at,
                 created_by, updated_by
             FROM products
@@ -303,7 +435,8 @@ impl ProductRepository for PostgresProductRepository {
                 base_price, currency, cost_price, list_price, is_tracked,
                 current_stock, min_stock_level, max_stock_level, reorder_point,
                 primary_supplier_id, lead_time_days, barcode, brand, manufacturer,
-                model_number, warranty_months, slug, meta_title, meta_description,
+                model_number, warranty_months,
+                slug, meta_title, meta_description,
                 is_featured, is_digital_download, notes, created_at, updated_at,
                 created_by, updated_by
             "#,

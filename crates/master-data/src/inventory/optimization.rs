@@ -1,4 +1,5 @@
 use chrono::{DateTime, Utc, Duration as ChronoDuration, Datelike};
+use rust_decimal::prelude::ToPrimitive;
 use serde::{Deserialize, Serialize};
 use sqlx::{Pool, Postgres};
 use std::collections::HashMap;
@@ -346,17 +347,17 @@ impl PostgresInventoryOptimizationEngine {
         let rows = sqlx::query!(
             r#"
             SELECT movement_date,
-                   SUM(CASE WHEN movement_type = 'out' THEN ABS(quantity) ELSE 0 END) as daily_demand
+                   SUM(CASE WHEN movement_type IN ('sales_shipment', 'transfer_out', 'production_consumption') THEN ABS(quantity) ELSE 0 END) as "daily_demand!: rust_decimal::Decimal"
             FROM inventory_movements
             WHERE product_id = $1
               AND location_id = $2
-              AND movement_date >= NOW() - INTERVAL '%d days'
+              AND movement_date >= NOW() - INTERVAL '1 day' * $3
             GROUP BY movement_date
             ORDER BY movement_date
             "#,
             product_id,
             location_id,
-            days_back
+            days_back as f64
         )
         .fetch_all(&self.pool)
         .await
@@ -364,7 +365,7 @@ impl PostgresInventoryOptimizationEngine {
 
         Ok(rows
             .into_iter()
-            .map(|row| (row.movement_date, row.daily_demand.unwrap_or(0.0)))
+            .map(|row| (row.movement_date, row.daily_demand.to_f64().unwrap_or(0.0)))
             .collect())
     }
 
@@ -638,7 +639,7 @@ impl InventoryOptimizationEngine for PostgresInventoryOptimizationEngine {
                 .map_err(|e| MasterDataError::DatabaseError(e.to_string()))?;
 
                 for product in products {
-                    let transfer_quantity = (product.from_stock.unwrap_or(0.0) * 0.3).min(100.0);
+                    let transfer_quantity = (product.from_stock.unwrap_or(rust_decimal::Decimal::ZERO).to_f64().unwrap_or(0.0) * 0.3).min(100.0);
                     if transfer_quantity > 10.0 {
                         recommended_transfers.push(RecommendedStockTransfer {
                             from_location_id: *from_location,
@@ -865,7 +866,7 @@ impl InventoryOptimizationEngine for PostgresInventoryOptimizationEngine {
         .fetch_optional(&self.pool)
         .await
         .map_err(|e| MasterDataError::DatabaseError(e.to_string()))?
-        .map(|row| row.current_stock)
+        .map(|row| row.current_stock.map(|d| d.to_f64().unwrap_or(0.0)).unwrap_or(0.0))
         .unwrap_or(0.0);
 
         let forecast = self
@@ -994,7 +995,7 @@ impl InventoryOptimizationEngine for PostgresInventoryOptimizationEngine {
         let products = sqlx::query!(
             r#"
             SELECT li.product_id, li.current_stock,
-                   COALESCE(SUM(CASE WHEN im.movement_type = 'out' THEN ABS(im.quantity) ELSE 0 END), 0) as annual_sales
+                   COALESCE(SUM(CASE WHEN im.movement_type IN ('sales_shipment', 'transfer_out', 'production_consumption') THEN ABS(im.quantity) ELSE 0 END), 0) as annual_sales
             FROM location_inventory li
             LEFT JOIN inventory_movements im ON li.product_id = im.product_id
                       AND li.location_id = im.location_id
@@ -1012,20 +1013,23 @@ impl InventoryOptimizationEngine for PostgresInventoryOptimizationEngine {
         let mut total_working_capital_reduction = 0.0;
 
         for product in products {
-            let current_turnover = if product.current_stock > 0.0 {
-                product.annual_sales.unwrap_or(0.0) / product.current_stock
+            let current_stock_f64 = product.current_stock.map(|d| d.to_f64().unwrap_or(0.0)).unwrap_or(0.0);
+            let annual_sales_f64 = product.annual_sales.map(|d| d.to_f64().unwrap_or(0.0)).unwrap_or(0.0);
+
+            let current_turnover = if current_stock_f64 > 0.0 {
+                annual_sales_f64 / current_stock_f64
             } else {
                 0.0
             };
 
             if current_turnover < target_turnover_ratio {
                 let target_stock = if target_turnover_ratio > 0.0 {
-                    product.annual_sales.unwrap_or(0.0) / target_turnover_ratio
+                    annual_sales_f64 / target_turnover_ratio
                 } else {
-                    product.current_stock
+                    current_stock_f64
                 };
 
-                let quantity_adjustment = product.current_stock - target_stock;
+                let quantity_adjustment = current_stock_f64 - target_stock;
                 if quantity_adjustment > 0.0 {
                     total_working_capital_reduction += quantity_adjustment * 10.0; // Assuming $10 per unit
 

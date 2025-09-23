@@ -668,8 +668,8 @@ impl SupplierService for MockSupplierService {
         Ok(PaginationResult {
             items,
             total,
-            page: pagination.page,
-            limit: pagination.limit,
+            page: pagination.page() as i64,
+            limit: pagination.limit() as i64,
             total_pages: 1,
         })
     }

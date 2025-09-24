@@ -1,0 +1,63 @@
+# =====================================================
+# ERP Development Environment - Docker Compose
+# =====================================================
+# Portable development setup that works on any system
+# Run: docker-compose -f docker-compose.dev.yml up -d
+
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: erp-postgres-dev
+    environment:
+      POSTGRES_DB: erp_main
+      POSTGRES_USER: erp_admin
+      POSTGRES_PASSWORD: erp_secure_password_change_in_production
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U erp_admin -d erp_main"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - erp-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: erp-redis-dev
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - erp-network
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  erp-network:
+    driver: bridge
+
+# =====================================================
+# Usage Instructions:
+# =====================================================
+# 1. Start services: docker-compose -f docker-compose.dev.yml up -d
+# 2. Wait for health checks: docker-compose -f docker-compose.dev.yml ps
+# 3. Run setup script: ./scripts/setup_database.sh (or .bat on Windows)
+# 4. Start development: cargo run --bin erp-server
+# 5. Stop services: docker-compose -f docker-compose.dev.yml down

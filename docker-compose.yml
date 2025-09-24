@@ -1,65 +1,100 @@
-version: '3.9'
-
 services:
   postgres:
-    image: postgres:16-alpine
-    container_name: erp_postgres
+    image: postgres:15-alpine
+    container_name: erp-postgres
+    restart: unless-stopped
     environment:
       POSTGRES_USER: erp_admin
       POSTGRES_PASSWORD: erp_secure_password_change_in_production
       POSTGRES_DB: erp_main
+      # Performance optimizations for development
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --lc-collate=C --lc-ctype=C"
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./migrations/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - ./docker/postgres-init:/docker-entrypoint-initdb.d:ro
+      - ./docker/postgres-config/postgresql.conf:/usr/local/share/postgresql/postgresql.conf.sample:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U erp_admin -d erp_main"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 30s
     networks:
-      - erp_network
+      - erp-network
 
   redis:
     image: redis:7-alpine
-    container_name: erp_redis
-    command: redis-server --appendonly yes --requirepass redis_secure_password_change_in_production
+    container_name: erp-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass erp_redis_password_change_in_production
     ports:
       - "6379:6379"
     volumes:
       - redis_data:/data
+      - ./docker/redis-config/redis.conf:/usr/local/etc/redis/redis.conf:ro
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
       interval: 10s
-      timeout: 5s
+      timeout: 3s
       retries: 5
+      start_period: 10s
     networks:
-      - erp_network
+      - erp-network
 
   # Optional: pgAdmin for database management
   pgadmin:
     image: dpage/pgadmin4:latest
-    container_name: erp_pgadmin
+    container_name: erp-pgadmin
+    restart: unless-stopped
     environment:
       PGADMIN_DEFAULT_EMAIL: admin@erp.local
-      PGADMIN_DEFAULT_PASSWORD: pgadmin_password_change_in_production
+      PGADMIN_DEFAULT_PASSWORD: admin123
       PGADMIN_CONFIG_SERVER_MODE: 'False'
     ports:
-      - "5050:80"
+      - "8080:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     networks:
-      - erp_network
+      - erp-network
     profiles:
-      - debug
+      - admin
+
+  # Optional: Redis administration tool
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: erp-redis-commander
+    restart: unless-stopped
+    environment:
+      REDIS_HOSTS: redis:erp-redis:6379:0:erp_redis_password_change_in_production
+      HTTP_USER: admin
+      HTTP_PASSWORD: admin123
+    ports:
+      - "8081:8081"
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - erp-network
+    profiles:
+      - admin
 
 volumes:
   postgres_data:
+    name: erp_postgres_data
     driver: local
   redis_data:
+    name: erp_redis_data
+    driver: local
+  pgadmin_data:
+    name: erp_pgadmin_data
     driver: local
 
 networks:
-  erp_network:
+  erp-network:
+    name: erp-network
     driver: bridge

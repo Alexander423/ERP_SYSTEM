@@ -47,3 +47,31 @@ temp/
 
 # SQLx
 .sqlx/
+
+# Temporary development files
+*.tmp.sql
+apply_*.sql
+fix_*.sql
+create_*.sql
+complete_*.sql
+minimal_*.sql
+targeted_*.sql
+updated_*.sql
+clear_*.sql
+reset_*.sql
+comprehensive_*.sql
+*.tmp.rs
+apply_*.rs
+fix_*.rs
+create_*.rs
+test_*.rs
+
+# Migration backups
+migrations_backup/
+migration_*.bak
+
+# Setup utilities
+setup_db/
+
+# Reference ERP systems (opensource projects for reference only)
+docs/ReferenzERP/

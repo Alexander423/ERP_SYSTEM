@@ -1,868 +1,532 @@
 # ERP System - Deployment Guide
 
-## 📋 Inhaltsverzeichnis
+**Status**: ⚠️ **Development Setup Guide** - Not production ready
 
-1. [Deployment Übersicht](#deployment-übersicht)
-2. [Systemanforderungen](#systemanforderungen)
-3. [Lokale Entwicklung](#lokale-entwicklung)
-4. [Docker Deployment](#docker-deployment)
-5. [Kubernetes Deployment](#kubernetes-deployment)
-6. [Cloud Deployment](#cloud-deployment)
-7. [Monitoring & Logging](#monitoring--logging)
-8. [Backup & Recovery](#backup--recovery)
-9. [Security Configuration](#security-configuration)
+This guide covers how to set up the ERP system locally for development and provides future deployment options.
 
-## 🎯 Deployment Übersicht
+## 📋 Table of Contents
 
-Das ERP System kann auf verschiedene Weise deployed werden:
+1. [Current Reality](#current-reality)
+2. [Local Development Setup](#local-development-setup)
+3. [Docker Development Environment](#docker-development-environment)
+4. [Database Setup](#database-setup)
+5. [Configuration Guide](#configuration-guide)
+6. [Common Issues & Troubleshooting](#common-issues--troubleshooting)
+7. [Future Deployment Options](#future-deployment-options)
 
-- **🔧 Lokale Entwicklung**: Direkt mit Cargo
-- **🐳 Docker**: Containerisiert für einfache Bereitstellung
-- **☸️ Kubernetes**: Orchestriert für Skalierbarkeit
-- **☁️ Cloud**: AWS, Azure, GCP mit managed Services
+## 🔍 Current Reality
 
-## 🖥️ Systemanforderungen
+### What This System Actually Is
 
-### Minimale Anforderungen
+- **Development Stage**: Foundation layer with basic HTTP server
+- **Local Development Only**: Not ready for production deployment
+- **Mock Implementation**: Most APIs return placeholder data
+- **Learning Platform**: Good for development and Rust learning
 
-| Komponente | Minimum | Empfohlen |
-|------------|---------|-----------|
-| CPU | 2 Cores | 4+ Cores |
-| RAM | 4 GB | 8+ GB |
-| Storage | 20 GB SSD | 100+ GB SSD |
-| Network | 100 Mbps | 1 Gbps |
+### What Works For Deployment
 
-### Software Abhängigkeiten
+✅ **Currently Working:**
+- Local development setup with Docker Compose
+- HTTP API server (basic functionality)
+- PostgreSQL database with migrations
+- Basic configuration system
 
-```bash
-# Rust (neueste stabile Version)
-rustc 1.70.0+
+❌ **Not Production Ready:**
+- No load balancing or high availability
+- Limited security implementation
+- No monitoring or observability
+- Mock authentication and business logic
 
-# PostgreSQL
-PostgreSQL 14.0+
+## 🚀 Local Development Setup
 
-# Optional: Redis für Caching
-Redis 6.0+
+### Prerequisites
 
-# Optional: Elasticsearch für erweiterte Suche
-Elasticsearch 8.0+
-```
+**Required Software:**
+- **Rust 1.70+**: https://rustup.rs/
+- **Docker & Docker Compose**: https://docker.com/
+- **Git**: Version control
 
-## 🔧 Lokale Entwicklung
+**Optional Tools:**
+- **PostgreSQL Client** (psql): Database management
+- **curl or Postman**: API testing
 
-### 1. Repository Setup
+### Quick Start
 
-```bash
-# Repository klonen
-git clone https://github.com/your-org/erp-system.git
-cd erp-system
+1. **Clone Repository**
+   ```bash
+   git clone <repository-url>
+   cd ERP
+   ```
 
-# Rust Dependencies installieren
-cargo build
+2. **Start Infrastructure**
+   ```bash
+   # Start PostgreSQL and Redis containers
+   docker-compose up -d
 
-# PostgreSQL starten (abhängig vom System)
-# Windows: net start postgresql
-# Linux: sudo systemctl start postgresql
-# macOS: brew services start postgresql
-```
+   # Verify containers are running
+   docker-compose ps
+   ```
 
-### 2. Umgebungsvariablen
+3. **Configure Environment**
+   ```bash
+   # Set environment variables
+   export DATABASE_URL="postgresql://erp_admin:erp_secure_password_change_in_production@localhost:5432/erp_main"
+   export REDIS_URL="redis://localhost:6379"
+   export JWT_SECRET="your-jwt-secret-min-32-characters-long"
+   export AES_ENCRYPTION_KEY="exactly-32-character-aes-key-here"
+   ```
 
-Erstellen Sie eine `.env` Datei:
+4. **Initialize Database**
+   ```bash
+   # Run database migrations
+   cargo sqlx migrate run
 
-```bash
-# .env
-DATABASE_URL=postgresql://erp_admin:erp_secure_password_change_in_production@localhost:5432/erp_main
-REDIS_URL=redis://localhost:6379
-JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
-ENCRYPTION_KEY=your-32-byte-encryption-key-base64-encoded
-RUST_LOG=info
-BIND_ADDRESS=0.0.0.0:8080
+   # Verify database setup
+   psql $DATABASE_URL -c "SELECT version();"
+   ```
 
-# Optional: External Services
-SMTP_HOST=smtp.gmail.com
-SMTP_PORT=587
-SMTP_USERNAME=your-email@gmail.com
-SMTP_PASSWORD=your-app-password
+5. **Build and Start**
+   ```bash
+   # Build the application
+   cargo build --all
 
-# Optional: Cloud Services
-AWS_REGION=eu-central-1
-AWS_ACCESS_KEY_ID=your-access-key
-AWS_SECRET_ACCESS_KEY=your-secret-key
-```
+   # Start the API server
+   cargo run -p erp-api
 
-### 3. Datenbank Setup
+   # Server should be running on http://localhost:3000
+   ```
 
-```bash
-# Datenbank erstellen
-createdb erp_main
+6. **Verify Setup**
+   ```bash
+   # Test health endpoint
+   curl http://localhost:3000/health
 
-# SQLX CLI installieren
-cargo install sqlx-cli --no-default-features --features postgres
+   # Expected response:
+   # {"status":"healthy","timestamp":"2024-12-16T..."}
+   ```
 
-# Migrationen ausführen
-sqlx migrate run
+## 🐳 Docker Development Environment
 
-# Fehlende Spalten hinzufügen
-psql -h localhost -U erp_admin -d erp_main -f migrations/20241216_006_final_missing_columns.sql
+### Docker Compose Setup
 
-# Query Cache generieren
-cargo sqlx prepare --workspace
-```
-
-### 4. Anwendung starten
-
-```bash
-# Development Mode
-cargo run --bin erp-server
-
-# Release Mode (für Testing)
-cargo run --release --bin erp-server
-
-# Mit spezifischer Konfiguration
-RUST_LOG=debug cargo run --bin erp-server
-```
-
-## 🐳 Docker Deployment
-
-### 1. Dockerfile
-
-```dockerfile
-# Multi-stage build für optimale Größe
-FROM rust:1.70-slim as builder
-
-# Build dependencies installieren
-RUN apt-get update && apt-get install -y \
-    pkg-config \
-    libssl-dev \
-    libpq-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-WORKDIR /app
-COPY . .
-
-# Dependencies cachen
-RUN cargo build --release
-
-FROM debian:bullseye-slim
-
-# Runtime dependencies
-RUN apt-get update && apt-get install -y \
-    ca-certificates \
-    libpq5 \
-    libssl1.1 \
-    && rm -rf /var/lib/apt/lists/*
-
-# Benutzer erstellen (Security Best Practice)
-RUN useradd -m -u 1000 erp
-USER erp
-
-# Binary kopieren
-COPY --from=builder /app/target/release/erp-server /usr/local/bin/
-COPY --from=builder /app/migrations /app/migrations
-
-EXPOSE 8080
-
-CMD ["erp-server"]
-```
-
-### 2. Docker Compose
+The project includes a Docker Compose configuration for development infrastructure:
 
 ```yaml
-# docker-compose.yml
+# docker-compose.yml (overview)
 version: '3.8'
-
 services:
   postgres:
-    image: postgres:15-alpine
-    restart: unless-stopped
+    image: postgres:15
+    ports:
+      - "5432:5432"
     environment:
       POSTGRES_DB: erp_main
       POSTGRES_USER: erp_admin
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-erp_secure_password_change_in_production}
-      PGDATA: /var/lib/postgresql/data/pgdata
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./migrations:/docker-entrypoint-initdb.d
-    ports:
-      - "5432:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U erp_admin -d erp_main"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      POSTGRES_PASSWORD: erp_secure_password_change_in_production
 
   redis:
     image: redis:7-alpine
-    restart: unless-stopped
     ports:
       - "6379:6379"
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 3s
-      retries: 3
 
-  erp-server:
-    build: .
-    restart: unless-stopped
-    environment:
-      DATABASE_URL: postgresql://erp_admin:${DB_PASSWORD:-erp_secure_password_change_in_production}@postgres:5432/erp_main
-      REDIS_URL: redis://redis:6379
-      JWT_SECRET: ${JWT_SECRET}
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
-      RUST_LOG: ${RUST_LOG:-info}
-      BIND_ADDRESS: 0.0.0.0:8080
+  pgadmin:
+    image: dpage/pgadmin4
     ports:
-      - "8080:8080"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  # Optional: Nginx Reverse Proxy
-  nginx:
-    image: nginx:alpine
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf
-      - ./ssl:/etc/nginx/ssl
-    depends_on:
-      - erp-server
-
-volumes:
-  postgres_data:
-  redis_data:
+      - "5050:80"
+    profiles:
+      - debug
 ```
 
-### 3. Environment Setup
+### Docker Commands
 
 ```bash
-# .env für Docker Compose
-DB_PASSWORD=super_secure_production_password
-JWT_SECRET=your-256-bit-secret-key-for-jwt-tokens
-ENCRYPTION_KEY=your-32-byte-base64-encoded-encryption-key
-RUST_LOG=info
-
-# SSL Zertifikate (für HTTPS)
-# Letsencrypt oder eigene Zertifikate in ./ssl/
-```
-
-### 4. Deployment ausführen
-
-```bash
-# Images bauen
-docker-compose build
-
-# Services starten
+# Start all services
 docker-compose up -d
 
-# Logs überprüfen
-docker-compose logs -f
+# Start with pgAdmin for database management
+docker-compose --profile debug up -d
 
-# Health Check
-curl http://localhost:8080/health
+# View logs
+docker-compose logs -f postgres
+docker-compose logs -f redis
 
-# Services stoppen
+# Stop all services
 docker-compose down
+
+# Reset everything (delete volumes)
+docker-compose down -v
+
+# Restart individual service
+docker-compose restart postgres
 ```
 
-## ☸️ Kubernetes Deployment
+### Accessing Services
 
-### 1. Namespace und ConfigMap
+- **PostgreSQL**: localhost:5432
+  - Username: `erp_admin`
+  - Password: `erp_secure_password_change_in_production`
+  - Database: `erp_main`
 
-```yaml
-# k8s/namespace.yaml
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: erp-system
+- **Redis**: localhost:6379 (no password)
 
----
-# k8s/configmap.yaml
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: erp-config
-  namespace: erp-system
-data:
-  RUST_LOG: "info"
-  BIND_ADDRESS: "0.0.0.0:8080"
+- **pgAdmin**: http://localhost:5050 (when using debug profile)
+  - Email: `admin@admin.com`
+  - Password: `admin`
+
+## 💾 Database Setup
+
+### Initial Database Creation
+
+```bash
+# Connect to PostgreSQL
+psql "postgresql://erp_admin:erp_secure_password_change_in_production@localhost:5432/erp_main"
+
+# List databases
+\l
+
+# Connect to erp_main database
+\c erp_main
+
+# List tables
+\dt
+
+# Check migration status
+SELECT * FROM _sqlx_migrations ORDER BY version;
 ```
 
-### 2. Secrets
+### Running Migrations
 
-```yaml
-# k8s/secrets.yaml
-apiVersion: v1
-kind: Secret
-metadata:
-  name: erp-secrets
-  namespace: erp-system
-type: Opaque
-data:
-  # Base64 encoded values
-  database-url: cG9zdGdyZXNxbDovL2VycF9hZG1pbjpwYXNzd29yZEBwb3N0Z3Jlczo1NDMyL2VycF9tYWlu
-  jwt-secret: eW91ci1qd3Qtc2VjcmV0LWtleQ==
-  encryption-key: eW91ci1lbmNyeXB0aW9uLWtleQ==
+```bash
+# Install sqlx-cli (if not installed)
+cargo install sqlx-cli --no-default-features --features postgres
+
+# Run all migrations
+cargo sqlx migrate run
+
+# Check migration status
+cargo sqlx migrate info
+
+# Revert last migration (if needed)
+cargo sqlx migrate revert
 ```
 
-### 3. PostgreSQL Deployment
+### Database Schema Overview
 
-```yaml
-# k8s/postgres.yaml
-apiVersion: apps/v1
-kind: StatefulSet
-metadata:
-  name: postgres
-  namespace: erp-system
-spec:
-  serviceName: postgres
-  replicas: 1
-  selector:
-    matchLabels:
-      app: postgres
-  template:
-    metadata:
-      labels:
-        app: postgres
-    spec:
-      containers:
-      - name: postgres
-        image: postgres:15-alpine
-        env:
-        - name: POSTGRES_DB
-          value: erp_main
-        - name: POSTGRES_USER
-          value: erp_admin
-        - name: POSTGRES_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: erp-secrets
-              key: postgres-password
-        ports:
-        - containerPort: 5432
-        volumeMounts:
-        - name: postgres-storage
-          mountPath: /var/lib/postgresql/data
-        resources:
-          requests:
-            memory: "512Mi"
-            cpu: "250m"
-          limits:
-            memory: "2Gi"
-            cpu: "1000m"
-  volumeClaimTemplates:
-  - metadata:
-      name: postgres-storage
-    spec:
-      accessModes: ["ReadWriteOnce"]
-      storageClassName: "fast-ssd"
-      resources:
-        requests:
-          storage: 50Gi
+```sql
+-- Core tables (after migrations)
+\dt public.*
 
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: postgres
-  namespace: erp-system
-spec:
-  selector:
-    app: postgres
-  ports:
-  - port: 5432
-    targetPort: 5432
+-- Example tables:
+-- - users: User accounts and authentication
+-- - tenants: Multi-tenant organization data
+-- - customers: Customer master data (main business entity)
+-- - _sqlx_migrations: Migration tracking
 ```
 
-### 4. ERP Server Deployment
+### Database Backup & Restore
+
+```bash
+# Create backup
+pg_dump $DATABASE_URL > backup_$(date +%Y%m%d_%H%M%S).sql
+
+# Restore from backup
+psql $DATABASE_URL < backup_file.sql
+
+# Reset database to clean state
+docker-compose down -v
+docker-compose up -d
+cargo sqlx migrate run
+```
+
+## ⚙️ Configuration Guide
+
+### Environment Variables
+
+**Required Configuration:**
+```bash
+# Database connection
+export DATABASE_URL="postgresql://user:pass@host:port/database"
+
+# Redis connection (optional, for future features)
+export REDIS_URL="redis://host:port"
+
+# Security settings
+export JWT_SECRET="minimum-32-character-secret-for-jwt-signing"
+export AES_ENCRYPTION_KEY="exactly-32-character-encryption-key-here"
+
+# Server settings
+export SERVER_PORT="3000"
+export ENVIRONMENT="development"
+```
+
+**Optional Configuration:**
+```bash
+# Logging
+export RUST_LOG="info,erp_api=debug,erp_auth=debug,erp_core=debug"
+
+# CORS (for frontend development)
+export CORS_ALLOWED_ORIGINS="http://localhost:3000,http://127.0.0.1:3000"
+```
+
+### Configuration Files
+
+The system supports TOML configuration files in the `config/` directory:
+
+```toml
+# config/development.toml
+[server]
+host = "127.0.0.1"
+port = 3000
+
+[database]
+max_connections = 5
+min_connections = 1
+
+[cors]
+allowed_origins = ["*"]  # Development only
+allowed_methods = ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+```
+
+### Validation
+
+The system validates configuration at startup:
+
+```bash
+# Test configuration loading
+cargo run -p erp-api --help
+
+# If configuration is invalid, you'll see detailed error messages
+# Example: "JWT secret must be at least 32 characters"
+```
+
+## 🔧 Common Issues & Troubleshooting
+
+### Build Issues
+
+**Problem**: Cargo build fails with dependency errors
+```bash
+# Solution: Clean and rebuild
+cargo clean
+cargo update
+cargo build --all
+```
+
+**Problem**: SQLX compilation errors
+```bash
+# Solution: Prepare queries against database
+cargo sqlx prepare --workspace
+
+# Or run with offline mode
+SQLX_OFFLINE=true cargo build
+```
+
+### Database Issues
+
+**Problem**: Cannot connect to database
+```bash
+# Check if PostgreSQL is running
+docker-compose ps
+
+# Check connection manually
+psql "postgresql://erp_admin:erp_secure_password_change_in_production@localhost:5432/erp_main"
+
+# Restart database
+docker-compose restart postgres
+```
+
+**Problem**: Migration errors
+```bash
+# Check current migration state
+cargo sqlx migrate info
+
+# Reset database (CAUTION: deletes all data)
+docker-compose down -v
+docker-compose up -d postgres
+cargo sqlx migrate run
+```
+
+### Runtime Issues
+
+**Problem**: Server won't start
+```bash
+# Check if port 3000 is already in use
+lsof -i :3000
+# Or on Windows: netstat -an | findstr :3000
+
+# Use different port
+SERVER_PORT=3001 cargo run -p erp-api
+```
+
+**Problem**: Health check returns error
+```bash
+# Check server logs for detailed error messages
+RUST_LOG=debug cargo run -p erp-api
+
+# Test with curl verbose mode
+curl -v http://localhost:3000/health
+```
+
+### Docker Issues
+
+**Problem**: Docker containers won't start
+```bash
+# Check Docker daemon is running
+docker info
+
+# Check for port conflicts
+docker ps -a
+
+# Remove conflicting containers
+docker-compose down
+docker system prune -f
+```
+
+### Environment Variable Issues
+
+**Problem**: Configuration validation fails
+```bash
+# Check all required environment variables are set
+env | grep -E "(DATABASE_URL|JWT_SECRET|AES_ENCRYPTION_KEY)"
+
+# Generate secure secrets
+export JWT_SECRET=$(openssl rand -base64 32)
+export AES_ENCRYPTION_KEY=$(openssl rand -base64 32 | cut -c1-32)
+```
+
+## 🔮 Future Deployment Options
+
+*Note: These are planned features, not currently implemented*
+
+### Production Docker Deployment
+
+```dockerfile
+# Future Dockerfile structure
+FROM rust:1.70 as builder
+WORKDIR /app
+COPY . .
+RUN cargo build --release
+
+FROM debian:bookworm-slim
+COPY --from=builder /app/target/release/erp-api /usr/local/bin/
+EXPOSE 3000
+CMD ["erp-api"]
+```
+
+### Kubernetes Deployment
 
 ```yaml
-# k8s/erp-server.yaml
+# Future k8s deployment
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: erp-server
-  namespace: erp-system
+  name: erp-api
 spec:
   replicas: 3
   selector:
     matchLabels:
-      app: erp-server
+      app: erp-api
   template:
     metadata:
       labels:
-        app: erp-server
+        app: erp-api
     spec:
       containers:
-      - name: erp-server
-        image: erp-server:latest
+      - name: erp-api
+        image: erp-system:latest
         ports:
-        - containerPort: 8080
+        - containerPort: 3000
         env:
         - name: DATABASE_URL
           valueFrom:
             secretKeyRef:
               name: erp-secrets
               key: database-url
-        - name: JWT_SECRET
-          valueFrom:
-            secretKeyRef:
-              name: erp-secrets
-              key: jwt-secret
-        - name: ENCRYPTION_KEY
-          valueFrom:
-            secretKeyRef:
-              name: erp-secrets
-              key: encryption-key
-        envFrom:
-        - configMapRef:
-            name: erp-config
-        resources:
-          requests:
-            memory: "512Mi"
-            cpu: "250m"
-          limits:
-            memory: "2Gi"
-            cpu: "1000m"
-        livenessProbe:
-          httpGet:
-            path: /health
-            port: 8080
-          initialDelaySeconds: 30
-          periodSeconds: 10
-        readinessProbe:
-          httpGet:
-            path: /ready
-            port: 8080
-          initialDelaySeconds: 5
-          periodSeconds: 5
-
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: erp-server
-  namespace: erp-system
-spec:
-  selector:
-    app: erp-server
-  ports:
-  - port: 80
-    targetPort: 8080
-  type: ClusterIP
 ```
 
-### 5. Ingress Configuration
+### Cloud Deployment Options
 
-```yaml
-# k8s/ingress.yaml
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: erp-ingress
-  namespace: erp-system
-  annotations:
-    kubernetes.io/ingress.class: nginx
-    cert-manager.io/cluster-issuer: letsencrypt-prod
-    nginx.ingress.kubernetes.io/rate-limit: "100"
-    nginx.ingress.kubernetes.io/ssl-redirect: "true"
-spec:
-  tls:
-  - hosts:
-    - api.erp-system.com
-    secretName: erp-tls
-  rules:
-  - host: api.erp-system.com
-    http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: erp-server
-            port:
-              number: 80
-```
+**AWS:**
+- ECS/Fargate for containerized deployment
+- RDS PostgreSQL for managed database
+- ElastiCache Redis for session storage
+- Application Load Balancer
+- CloudWatch for monitoring
 
-### 6. Deployment ausführen
+**Azure:**
+- Container Instances or App Service
+- Azure Database for PostgreSQL
+- Azure Cache for Redis
+- Application Gateway
+- Azure Monitor
+
+**Google Cloud:**
+- Cloud Run for serverless containers
+- Cloud SQL PostgreSQL
+- Memorystore Redis
+- Cloud Load Balancing
+- Cloud Monitoring
+
+### Monitoring & Observability (Planned)
 
 ```bash
-# Namespace erstellen
-kubectl apply -f k8s/namespace.yaml
-
-# Secrets erstellen (mit echten Werten)
-kubectl apply -f k8s/secrets.yaml
-
-# ConfigMap erstellen
-kubectl apply -f k8s/configmap.yaml
-
-# PostgreSQL deployen
-kubectl apply -f k8s/postgres.yaml
-
-# Warten bis PostgreSQL bereit ist
-kubectl wait --for=condition=ready pod -l app=postgres -n erp-system --timeout=300s
-
-# ERP Server deployen
-kubectl apply -f k8s/erp-server.yaml
-
-# Ingress konfigurieren
-kubectl apply -f k8s/ingress.yaml
-
-# Status überprüfen
-kubectl get pods -n erp-system
-kubectl get services -n erp-system
-kubectl logs -f deployment/erp-server -n erp-system
-```
-
-## ☁️ Cloud Deployment
-
-### AWS Deployment mit EKS
-
-```bash
-# EKS Cluster erstellen
-eksctl create cluster --name erp-cluster --region eu-central-1 --nodes 3
-
-# RDS PostgreSQL erstellen
-aws rds create-db-instance \
-  --db-instance-identifier erp-postgres \
-  --db-instance-class db.t3.medium \
-  --engine postgres \
-  --engine-version 15.4 \
-  --allocated-storage 100 \
-  --db-name erp_main \
-  --master-username erp_admin \
-  --master-user-password your-secure-password
-
-# ElastiCache Redis erstellen
-aws elasticache create-cache-cluster \
-  --cache-cluster-id erp-redis \
-  --cache-node-type cache.t3.micro \
-  --engine redis \
-  --num-cache-nodes 1
-
-# Kubernetes Secrets aktualisieren mit AWS Endpunkten
-kubectl create secret generic erp-secrets \
-  --from-literal=database-url="postgresql://erp_admin:password@erp-postgres.region.rds.amazonaws.com:5432/erp_main" \
-  --from-literal=redis-url="redis://erp-redis.cache.amazonaws.com:6379" \
-  -n erp-system
-```
-
-### Azure Deployment mit AKS
-
-```bash
-# Resource Group erstellen
-az group create --name erp-rg --location westeurope
-
-# AKS Cluster erstellen
-az aks create \
-  --resource-group erp-rg \
-  --name erp-cluster \
-  --node-count 3 \
-  --enable-addons monitoring
-
-# Azure Database for PostgreSQL erstellen
-az postgres server create \
-  --resource-group erp-rg \
-  --name erp-postgres \
-  --location westeurope \
-  --admin-user erp_admin \
-  --admin-password your-secure-password \
-  --sku-name GP_Gen5_2
-
-# Azure Cache for Redis erstellen
-az redis create \
-  --resource-group erp-rg \
-  --name erp-redis \
-  --location westeurope \
-  --sku Basic \
-  --vm-size c0
-```
-
-## 📊 Monitoring & Logging
-
-### Prometheus & Grafana
-
-```yaml
-# k8s/monitoring.yaml
-apiVersion: v1
-kind: ServiceMonitor
-metadata:
-  name: erp-server
-  namespace: erp-system
-spec:
-  selector:
-    matchLabels:
-      app: erp-server
-  endpoints:
-  - port: metrics
-    path: /metrics
-
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: grafana-dashboard
-  namespace: erp-system
-data:
-  erp-dashboard.json: |
-    {
-      "dashboard": {
-        "title": "ERP System Dashboard",
-        "panels": [
-          {
-            "title": "Request Rate",
-            "type": "graph",
-            "targets": [
-              {
-                "expr": "rate(http_requests_total[5m])"
-              }
-            ]
-          }
-        ]
-      }
-    }
-```
-
-### ELK Stack für Logging
-
-```yaml
-# k8s/elasticsearch.yaml
-apiVersion: apps/v1
-kind: StatefulSet
-metadata:
-  name: elasticsearch
-  namespace: erp-system
-spec:
-  serviceName: elasticsearch
-  replicas: 1
-  selector:
-    matchLabels:
-      app: elasticsearch
-  template:
-    metadata:
-      labels:
-        app: elasticsearch
-    spec:
-      containers:
-      - name: elasticsearch
-        image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
-        env:
-        - name: discovery.type
-          value: single-node
-        - name: ES_JAVA_OPTS
-          value: "-Xms512m -Xmx512m"
-        ports:
-        - containerPort: 9200
-        volumeMounts:
-        - name: es-data
-          mountPath: /usr/share/elasticsearch/data
-  volumeClaimTemplates:
-  - metadata:
-      name: es-data
-    spec:
-      accessModes: ["ReadWriteOnce"]
-      resources:
-        requests:
-          storage: 10Gi
-```
-
-## 🔒 Security Configuration
-
-### SSL/TLS Setup
-
-```bash
-# Letsencrypt mit cert-manager
-kubectl apply -f https://github.com/jetstack/cert-manager/releases/download/v1.13.0/cert-manager.yaml
-
-# ClusterIssuer für Letsencrypt
-kubectl apply -f - <<EOF
-apiVersion: cert-manager.io/v1
-kind: ClusterIssuer
-metadata:
-  name: letsencrypt-prod
-spec:
-  acme:
-    server: https://acme-v02.api.letsencrypt.org/directory
-    email: admin@yourdomain.com
-    privateKeySecretRef:
-      name: letsencrypt-prod
-    solvers:
-    - http01:
-        ingress:
-          class: nginx
-EOF
-```
-
-### Network Policies
-
-```yaml
-# k8s/network-policy.yaml
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: erp-network-policy
-  namespace: erp-system
-spec:
-  podSelector:
-    matchLabels:
-      app: erp-server
-  policyTypes:
-  - Ingress
-  - Egress
-  ingress:
-  - from:
-    - podSelector:
-        matchLabels:
-          app: nginx-ingress
-    ports:
-    - protocol: TCP
-      port: 8080
-  egress:
-  - to:
-    - podSelector:
-        matchLabels:
-          app: postgres
-    ports:
-    - protocol: TCP
-      port: 5432
-  - to:
-    - podSelector:
-        matchLabels:
-          app: redis
-    ports:
-    - protocol: TCP
-      port: 6379
-```
-
-## 💾 Backup & Recovery
-
-### Automatisches Datenbank Backup
-
-```bash
-#!/bin/bash
-# backup.sh
-
-BACKUP_DIR="/var/backups/erp"
-RETENTION_DAYS=30
-TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-
-# PostgreSQL Backup
-pg_dump $DATABASE_URL | gzip > "$BACKUP_DIR/erp_backup_$TIMESTAMP.sql.gz"
-
-# Upload zu S3 (optional)
-aws s3 cp "$BACKUP_DIR/erp_backup_$TIMESTAMP.sql.gz" s3://your-backup-bucket/
-
-# Alte Backups löschen
-find "$BACKUP_DIR" -name "*.sql.gz" -mtime +$RETENTION_DAYS -delete
-
-echo "Backup completed: erp_backup_$TIMESTAMP.sql.gz"
-```
-
-### Kubernetes CronJob für Backups
-
-```yaml
-# k8s/backup-cronjob.yaml
-apiVersion: batch/v1
-kind: CronJob
-metadata:
-  name: postgres-backup
-  namespace: erp-system
-spec:
-  schedule: "0 2 * * *"  # Täglich um 2 Uhr
-  jobTemplate:
-    spec:
-      template:
-        spec:
-          containers:
-          - name: postgres-backup
-            image: postgres:15-alpine
-            env:
-            - name: PGPASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: erp-secrets
-                  key: postgres-password
-            command:
-            - /bin/bash
-            - -c
-            - |
-              TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-              pg_dump -h postgres -U erp_admin erp_main | gzip > /backup/erp_backup_$TIMESTAMP.sql.gz
-              echo "Backup completed: erp_backup_$TIMESTAMP.sql.gz"
-            volumeMounts:
-            - name: backup-storage
-              mountPath: /backup
-          volumes:
-          - name: backup-storage
-            persistentVolumeClaim:
-              claimName: backup-pvc
-          restartPolicy: OnFailure
-```
-
-## 🔍 Troubleshooting
-
-### Häufige Probleme
-
-#### 1. Datenbankverbindung fehlgeschlagen
-
-```bash
-# Verbindung testen
-psql $DATABASE_URL -c "SELECT version();"
-
-# Network connectivity prüfen
-kubectl exec -it deployment/erp-server -n erp-system -- nc -zv postgres 5432
-```
-
-#### 2. Memory/CPU Issues
-
-```bash
-# Resource Usage prüfen
-kubectl top pods -n erp-system
-
-# Limits anpassen
-kubectl patch deployment erp-server -n erp-system -p '{"spec":{"template":{"spec":{"containers":[{"name":"erp-server","resources":{"limits":{"memory":"4Gi","cpu":"2000m"}}}]}}}}'
-```
-
-#### 3. SSL/TLS Probleme
-
-```bash
-# Zertifikat Status prüfen
-kubectl describe certificate erp-tls -n erp-system
-
-# cert-manager Logs prüfen
-kubectl logs -n cert-manager deployment/cert-manager
-```
-
-### Logs und Debugging
-
-```bash
-# Application Logs
-kubectl logs -f deployment/erp-server -n erp-system
-
-# Structured Logs mit JSON
-kubectl logs deployment/erp-server -n erp-system | jq .
-
-# Fehlerbasierte Filterung
-kubectl logs deployment/erp-server -n erp-system | grep ERROR
-
-# Performance Profiling
-kubectl port-forward -n erp-system deployment/erp-server 6060:6060
-go tool pprof http://localhost:6060/debug/pprof/profile
+# Future monitoring stack
+- Prometheus: Metrics collection
+- Grafana: Dashboards and alerting
+- Jaeger: Distributed tracing
+- ELK Stack: Log aggregation and search
 ```
 
 ---
 
-**© 2024 Enterprise ERP System - Deployment Guide v1.0**
+## 📝 Deployment Checklist
+
+### Development Setup Verification
+
+- [ ] Rust toolchain installed (1.70+)
+- [ ] Docker and Docker Compose working
+- [ ] PostgreSQL container accessible
+- [ ] Database migrations completed
+- [ ] Environment variables configured
+- [ ] API server starts without errors
+- [ ] Health check endpoint responds
+- [ ] Can connect to database with psql
+
+### Before Production (Future)
+
+- [ ] Security configuration reviewed
+- [ ] All default passwords changed
+- [ ] HTTPS/TLS configured
+- [ ] Database backups automated
+- [ ] Monitoring and alerting set up
+- [ ] Load testing completed
+- [ ] Disaster recovery plan ready
+
+---
+
+## ⚠️ Important Notes
+
+### Current Limitations
+
+1. **Development Only**: This setup is for development, not production
+2. **Mock Implementation**: Most business logic is placeholder code
+3. **Single Instance**: No high availability or clustering
+4. **Basic Security**: Authentication is mock implementation
+5. **No Monitoring**: No production-ready monitoring included
+
+### Security Warnings
+
+- **Change Default Passwords**: Never use development passwords in production
+- **Use HTTPS**: Only HTTP is configured for local development
+- **Secret Management**: Use proper secret management systems for production
+- **Network Security**: Configure firewalls and network security
+
+### Performance Considerations
+
+- **Resource Usage**: Current implementation is not optimized for performance
+- **Connection Pooling**: Database connections are limited for development
+- **Caching**: Redis is configured but not actively used yet
+- **Scaling**: No horizontal scaling implemented
+
+---
+
+**Status**: Updated December 2024 | **Version**: 0.1.0-alpha | **Deployment**: Local Development Ready

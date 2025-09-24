@@ -23,30 +23,22 @@ DATABASE_URL="your-postgres-url" cargo run -p erp-api --bin erp-server
 
 ## 📚 Documentation
 
-### Core Documentation
-- **[Security](docs/SECURITY.md)** - Security policies and guidelines
-- **[Contributing](docs/CONTRIBUTING.md)** - How to contribute to the project
-- **[Changelog](docs/CHANGELOG.md)** - Version history and changes
+### 🎯 Project Status & Development
+- **[Project Status](PROJECT_STATUS.md)** - **Accurate current development status**
+- **[Contributing Guide](docs/development/CONTRIBUTING.md)** - Development setup and guidelines
 
-### Technical Documentation
-- **[Architecture](docs/architecture/ARCHITECTURE.md)** - System architecture overview
-- **[Configuration](docs/architecture/CONFIGURATION.md)** - Configuration guide
-- **[API Documentation](docs/api/API_DOKUMENTATION.md)** - Complete API reference
-- **[Deployment Guide](docs/deployment/DEPLOYMENT_GUIDE.md)** - Production deployment instructions
+### 🏗️ Technical Documentation
+- **[System Architecture](docs/architecture/ARCHITECTURE.md)** - Architecture overview and design patterns
+- **[Configuration Guide](docs/architecture/CONFIGURATION.md)** - Environment setup and configuration management
+- **[API Documentation](docs/api/API_DOKUMENTATION.md)** - REST API endpoints (current implementation)
+- **[Deployment Guide](docs/deployment/DEPLOYMENT_GUIDE.md)** - Docker setup and deployment instructions
 
-### Project Information
-- **[Project Status](PROJECT_STATUS.md)** - Accurate current development status
-- **[Legacy Documentation](docs/project/)** - Historical implementation docs (may contain outdated info)
+### 📋 Project Information
+- **[Changelog](docs/project/CHANGELOG.md)** - Version history and changes
+- **[Test Reports](docs/testing/test_reports.md)** - Current testing status
 
-### Localization
-- **[Deutsche Dokumentation](docs/localization/DEUTSCHE_DOKUMENTATION.md)** - German documentation
-
-### Testing
-- **[Test Reports](docs/testing/test_reports.md)** - Comprehensive testing results
-
-### GitHub & Development
-- **[GitHub Setup](docs/github/GITHUB_SETUP.md)** - Repository setup guide
-- **[Issue Templates](docs/github/github_issues_templates.md)** - GitHub issue templates
+### 📚 Reference Materials
+- **[Reference ERP Systems](docs/ReverenzERP/)** - Open source ERP systems for analysis and comparison
 
 ## 🏗️ System Features
 
@@ -132,7 +124,7 @@ DATABASE_URL="your-test-db-url" cargo test -p erp-master-data
 
 ## 🤝 Contributing
 
-See [Contributing Guide](docs/CONTRIBUTING.md) for details on how to contribute to this project.
+See [Contributing Guide](docs/development/CONTRIBUTING.md) for details on how to contribute to this project.
 
 ## 📄 License
 
@@ -142,8 +134,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 For questions and support:
 - Check the [documentation](docs/)
-- Review [GitHub issues](docs/github/github_issues_templates.md)
-- Read the [troubleshooting guide](docs/deployment/DEPLOYMENT_GUIDE.md)
+- Read the [deployment guide](docs/deployment/DEPLOYMENT_GUIDE.md)
+- Review the [project status](PROJECT_STATUS.md) for current limitations
 
 ---
 

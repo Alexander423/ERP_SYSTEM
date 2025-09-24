@@ -310,13 +310,13 @@ async fn show_tenant(pool: &PgPool, tenant: &str, format: &str) -> Result<()> {
             println!("{}", "📊 Tenant Details:".blue().bold());
             println!("  ID: {}", tenant_data.id.to_string().yellow());
             println!("  Name: {}", tenant_data.name.white().bold());
-            println!("  Schema: {}", tenant_data.schema_name.cyan());
+            println!("  Schema: {}", tenant_data.schema_name.as_ref().unwrap_or(&"none".to_string()).cyan());
             println!("  Status: {}",
-                match tenant_data.status.as_str() {
-                    "active" => tenant_data.status.green(),
-                    "suspended" => tenant_data.status.yellow(),
-                    "deleted" => tenant_data.status.red(),
-                    _ => tenant_data.status.normal(),
+                match tenant_data.status.as_ref().map(|s| s.as_str()).unwrap_or("unknown") {
+                    "active" => "active".green(),
+                    "suspended" => "suspended".yellow(),
+                    "deleted" => "deleted".red(),
+                    _ => "unknown".normal(),
                 }
             );
             println!("  Created: {}", tenant_data.created_at.format("%Y-%m-%d %H:%M:%S").to_string().bright_black());
@@ -411,7 +411,7 @@ async fn delete_tenant(
     .ok_or_else(|| anyhow!("Tenant not found: {}", tenant))?;
 
     println!("{}", "⚠️ WARNING: This will delete the tenant and all associated data!".red().bold());
-    println!("Tenant: {} ({})", tenant_data.name.yellow(), tenant_data.schema_name.cyan());
+    println!("Tenant: {} ({})", tenant_data.name.yellow(), tenant_data.schema_name.as_ref().unwrap_or(&"none".to_string()).cyan());
 
     if !force {
         if !Confirm::new()
@@ -437,7 +437,7 @@ async fn delete_tenant(
 
     if !keep_schema {
         // Drop schema and all its contents
-        let drop_schema_sql = format!("DROP SCHEMA IF EXISTS {} CASCADE", tenant_data.schema_name);
+        let drop_schema_sql = format!("DROP SCHEMA IF EXISTS {} CASCADE", tenant_data.schema_name.as_ref().unwrap_or(&"none".to_string()));
         sqlx::query(&drop_schema_sql)
             .execute(&mut *tx)
             .await?;

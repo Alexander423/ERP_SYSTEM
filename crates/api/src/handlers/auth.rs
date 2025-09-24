@@ -3,7 +3,7 @@
 //! HTTP handlers for authentication endpoints including login, register, 2FA, etc.
 
 use axum::{
-    extract::{Request, State},
+    extract::State,
     http::StatusCode,
     response::{IntoResponse, Json},
     routing::{post, Router},
@@ -11,7 +11,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-use crate::{state::AppState, error_handler::create_api_error_with_request_id};
+use crate::{state::AppState, error_handler::create_api_error};
 use erp_core::error::{Error, ErrorCode};
 
 #[derive(Debug, Deserialize)]
@@ -349,9 +349,9 @@ async fn logout(State(_state): State<AppState>) -> Result<Json<Value>, StatusCod
 
 /// Validate an authentication token with proper error handling
 /// This function demonstrates the usage of ApiError methods with request context
+#[axum::debug_handler]
 async fn validate_token(
     State(_state): State<AppState>,
-    request: Request,
     Json(payload): Json<Value>,
 ) -> impl IntoResponse {
     // Extract token from payload
@@ -359,25 +359,25 @@ async fn validate_token(
         Some(token) => token,
         None => {
             let error = Error::new(ErrorCode::ValidationFailed, "Token is required");
-            return create_api_error_with_request_id(error, &request).into_response();
+            return create_api_error(error).into_response();
         }
     };
 
     // Validate token format
     if token.is_empty() {
         let error = Error::new(ErrorCode::ValidationFailed, "Token cannot be empty");
-        return create_api_error_with_request_id(error, &request).into_response();
+        return create_api_error(error).into_response();
     }
 
     // Mock validation - in real implementation this would call auth service
     if token.starts_with("invalid_") {
         let error = Error::new(ErrorCode::AuthenticationFailed, "Invalid token provided");
-        return create_api_error_with_request_id(error, &request).into_response();
+        return create_api_error(error).into_response();
     }
 
     if token.starts_with("expired_") {
         let error = Error::new(ErrorCode::AuthenticationFailed, "Token has expired");
-        return create_api_error_with_request_id(error, &request).into_response();
+        return create_api_error(error).into_response();
     }
 
     // Return success response

@@ -692,7 +692,7 @@ impl InventoryRepository for PostgresInventoryRepository {
                 operator_name: row.operator_name,
                 created_at: row.created_at,
                 effective_date: row.effective_date,
-                audit_trail: row.audit_trail.and_then(|s| serde_json::from_str(&s).ok()),
+                audit_trail: row.audit_trail.as_ref().and_then(|s| serde_json::from_str(s).ok()),
             }).collect()
         } else {
             let rows = sqlx::query!(
@@ -743,7 +743,7 @@ impl InventoryRepository for PostgresInventoryRepository {
                 operator_name: row.operator_name,
                 created_at: row.created_at,
                 effective_date: row.effective_date,
-                audit_trail: row.audit_trail.and_then(|s| serde_json::from_str(&s).ok()),
+                audit_trail: row.audit_trail.as_ref().and_then(|s| serde_json::from_str(s).ok()),
             }).collect()
         };
 

@@ -254,10 +254,10 @@ fn create_app(state: AppState, _auth_service: Arc<AuthService>) -> Result<Router
         // Health checks
         .route("/health", axum::routing::get(health::health_check))
         .route("/ready", axum::routing::get(health::readiness_check))
-        // Global middleware
+        // Global middleware (Order matters: layers are applied from bottom to top)
         .layer(
             ServiceBuilder::new()
-                // Security headers (applied first, to all responses)
+                // Security headers (applied to all responses)
                 .layer(axum::middleware::from_fn(api_middleware::security_headers::security_headers_middleware))
                 // Request ID middleware
                 .layer(axum::middleware::from_fn(api_middleware::request_id::request_id_middleware))
@@ -272,7 +272,7 @@ fn create_app(state: AppState, _auth_service: Arc<AuthService>) -> Result<Router
                 )
                 // Response compression
                 .layer(CompressionLayer::new())
-                // CORS (should be after security headers)
+                // CORS (should be outermost)
                 .layer(build_cors_layer(&state.config.cors)?),
         )
         .with_state(state)

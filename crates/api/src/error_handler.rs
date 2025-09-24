@@ -4,7 +4,7 @@
 //! API errors with proper context and environment awareness.
 
 use crate::error::ApiError;
-use axum::{extract::Request, response::Response};
+use axum::{extract::Request, response::{Response, IntoResponse}};
 use erp_core::Error;
 use std::env;
 

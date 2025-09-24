@@ -782,7 +782,7 @@ impl InventoryAnalyticsEngine for DefaultInventoryAnalyticsEngine {
         })
     }
 
-    async fn analyze_demand_patterns(&self, product_id: Uuid, location_id: Uuid, analysis_period_days: i32) -> Result<DemandPatternAnalysis> {
+    async fn analyze_demand_patterns(&self, _product_id: Uuid, _location_id: Uuid, analysis_period_days: i32) -> Result<DemandPatternAnalysis> {
         // Generate sample demand data
         let demand_data: Vec<f64> = (0..analysis_period_days)
             .map(|i| 100.0 + (i as f64 * 0.5) + (i as f64 / 7.0).sin() * 20.0)
@@ -858,6 +858,7 @@ impl InventoryAnalyticsEngine for DefaultInventoryAnalyticsEngine {
                     mean_absolute_percentage_error: 0.0,
                     forecast_bias: 0.0,
                     tracking_signal: 0.0,
+                    accuracy_percentage: 0.0,
                 },
                 accuracy_score: 0.92,
                 created_at: Utc::now(),

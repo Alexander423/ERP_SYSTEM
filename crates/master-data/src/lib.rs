@@ -34,7 +34,7 @@ pub use inventory::{
 pub use product::{
     Product, ProductType, ProductStatus, UnitOfMeasure,
     ProductCategory, ProductPrice, ProductVariant, ProductSupplier,
-    CreateProductRequest, UpdateProductRequest, ProductSearchFilters,
+    ProductSummary, CreateProductRequest, UpdateProductRequest, ProductSearchFilters,
 };
 
 #[cfg(feature = "axum")]

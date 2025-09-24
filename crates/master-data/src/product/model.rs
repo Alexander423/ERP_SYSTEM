@@ -899,6 +899,7 @@ pub struct AdvancedProductSearch {
     // Inventory
     pub in_stock_only: Option<bool>,
     pub needs_reorder: Option<bool>,
+    pub featured_only: Option<bool>,
     pub location_ids: Option<Vec<Uuid>>,
     pub min_stock: Option<i32>,
     pub max_stock: Option<i32>,
@@ -923,6 +924,9 @@ pub struct AdvancedProductSearch {
     pub eco_friendly_only: Option<bool>,
     pub max_carbon_footprint: Option<f64>,
     pub recyclable_only: Option<bool>,
+
+    // Status and Visibility
+    pub include_inactive: Option<bool>,
 
     // Physical Properties
     pub min_weight: Option<f64>,

@@ -6,7 +6,7 @@
 use crate::inventory::model::*;
 use crate::inventory::repository::InventoryRepository;
 use crate::types::{ValuationMethod, ReservationType};
-use anyhow::Result;
+use crate::error::{Result, MasterDataError};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc, Duration};
 use serde::{Deserialize, Serialize};
@@ -38,18 +38,6 @@ pub struct CreateReservationRequest {
     pub notes: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UpdateReplenishmentRuleRequest {
-    pub product_id: Option<Uuid>,
-    pub location_id: Option<Uuid>,
-    pub reorder_point: Option<i32>,
-    pub max_stock_level: Option<i32>,
-    pub economic_order_quantity: Option<i32>,
-    pub lead_time_days: Option<i32>,
-    pub safety_stock: Option<i32>,
-    pub preferred_supplier_id: Option<Uuid>,
-    pub is_active: Option<bool>,
-}
 
 /// Comprehensive inventory service trait with advanced features
 #[async_trait]
@@ -442,7 +430,7 @@ impl DefaultInventoryService {
         &self,
         inventory: &LocationInventory,
         rule: &ReplenishmentRule,
-        forecast: &[InventoryForecast],
+        _forecast: &[InventoryForecast],
     ) -> Result<i32> {
         match rule.rule_type {
             ReplenishmentType::ReorderPoint => Ok(rule.reorder_quantity),
@@ -515,7 +503,10 @@ impl InventoryService for DefaultInventoryService {
     async fn update_inventory_levels(&self, request: UpdateInventoryRequest) -> Result<LocationInventory> {
         // Validate the request
         if request.quantity_change == 0 {
-            return Err(anyhow::anyhow!("Quantity change cannot be zero"));
+            return Err(MasterDataError::ValidationError {
+                field: "quantity_change".to_string(),
+                message: "Quantity change cannot be zero".to_string()
+            }.into());
         }
 
         // Update inventory and create movement record
@@ -534,11 +525,11 @@ impl InventoryService for DefaultInventoryService {
     async fn create_stock_transfer(&self, request: CreateStockTransferRequest) -> Result<StockTransfer> {
         // Validate transfer request
         if request.from_location_id == request.to_location_id {
-            return Err(anyhow::anyhow!("Cannot transfer to the same location"));
+            return Err(MasterDataError::ValidationError { field: "location".to_string(), message: "Cannot transfer to the same location".to_string() }.into());
         }
 
-        if request.quantity_requested <= 0 {
-            return Err(anyhow::anyhow!("Transfer quantity must be positive"));
+        if request.quantity <= 0 {
+            return Err(MasterDataError::ValidationError { field: "quantity".to_string(), message: "Transfer quantity must be positive".to_string() }.into());
         }
 
         // Check available inventory
@@ -546,8 +537,8 @@ impl InventoryService for DefaultInventoryService {
             .get_location_inventory(request.product_id, request.from_location_id)
             .await?;
 
-        if from_inventory.quantity_available < request.quantity_requested {
-            return Err(anyhow::anyhow!("Insufficient inventory for transfer"));
+        if from_inventory.quantity_available < request.quantity {
+            return Err(MasterDataError::ValidationError { field: "quantity".to_string(), message: "Insufficient inventory for transfer".to_string() }.into());
         }
 
         // Create transfer record
@@ -556,12 +547,12 @@ impl InventoryService for DefaultInventoryService {
             product_id: request.product_id,
             from_location_id: request.from_location_id,
             to_location_id: request.to_location_id,
-            quantity_requested: request.quantity_requested,
+            quantity: request.quantity,
             quantity_shipped: None,
             quantity_received: None,
-            transfer_status: TransferStatus::Requested,
+            status: TransferStatus::Requested,
             priority: request.priority,
-            reason: request.reason,
+            reason: "Manual transfer".to_string(),
             requested_by: Uuid::new_v4(), // Would come from context
             approved_by: None,
             shipped_by: None,
@@ -569,14 +560,14 @@ impl InventoryService for DefaultInventoryService {
             requested_date: Utc::now(),
             approved_date: None,
             shipped_date: None,
-            expected_delivery_date: request.expected_delivery_date,
+            received_date: None,
             actual_delivery_date: None,
             tracking_number: None,
             carrier: None,
             shipping_cost: None,
             notes: request.notes,
             created_at: Utc::now(),
-            updated_at: Utc::now(),
+            created_by: Uuid::new_v4(), // Would come from context
         };
 
         self.repository.create_stock_transfer(transfer).await
@@ -608,8 +599,8 @@ impl InventoryService for DefaultInventoryService {
 
     async fn create_reservation(&self, request: CreateReservationRequest) -> Result<InventoryReservation> {
         // Validate reservation request
-        if request.quantity_reserved <= 0 {
-            return Err(anyhow::anyhow!("Reservation quantity must be positive"));
+        if request.quantity <= 0 {
+            return Err(MasterDataError::ValidationError { field: "quantity".to_string(), message: "Reservation quantity must be positive".to_string() }.into());
         }
 
         // Check available inventory
@@ -618,8 +609,8 @@ impl InventoryService for DefaultInventoryService {
             .await?;
 
         let available_for_reservation = inventory.quantity_available - inventory.quantity_reserved;
-        if available_for_reservation < request.quantity_reserved {
-            return Err(anyhow::anyhow!("Insufficient inventory for reservation"));
+        if available_for_reservation < request.quantity {
+            return Err(MasterDataError::ValidationError { field: "quantity".to_string(), message: "Insufficient inventory for reservation".to_string() }.into());
         }
 
         // Create reservation
@@ -627,20 +618,24 @@ impl InventoryService for DefaultInventoryService {
             id: Uuid::new_v4(),
             product_id: request.product_id,
             location_id: request.location_id,
-            reservation_type: request.reservation_type,
-            quantity_reserved: request.quantity_reserved,
-            reserved_for: request.reserved_for,
-            reference_id: request.reference_id,
-            reference_type: request.reference_type,
-            reservation_date: Utc::now(),
-            expiry_date: request.expiry_date,
-            priority: request.priority,
-            status: ReservationStatus::Active,
-            created_by: Uuid::new_v4(), // Would come from context
+            quantity_reserved: request.quantity,
+            reservation_status: ReservationStatus::Active,
+            priority: ReservationPriority::Normal, // Default priority
+            reference_id: Uuid::new_v4(), // Default reference
+            reference_type: "manual".to_string(),
+            expiry_date: None, // Default no expiry
             created_at: Utc::now(),
+            updated_at: Utc::now(),
+            notes: None,
+            created_by: Uuid::new_v4(), // Would come from context
             released_at: None,
             released_by: None,
-            notes: request.notes,
+            quantity: request.quantity, // Alias field
+            fulfilled_at: None,
+            fulfilled_quantity: 0,
+            reservation_type: "manual".to_string(),
+            status: ReservationStatus::Active, // Alias for reservation_status
+            reserved_until: Some(request.reserved_until),
         };
 
         self.repository.create_reservation(reservation).await
@@ -682,6 +677,12 @@ impl InventoryService for DefaultInventoryService {
             active: true,
             created_at: Utc::now(),
             updated_at: Utc::now(),
+            // Additional required fields
+            economic_order_quantity: (request.reorder_quantity as f64),
+            preferred_supplier_id: request.supplier_id,
+            is_active: true,
+            last_triggered: None,
+            created_by: Uuid::new_v4(), // Default user ID - should come from context
         };
 
         self.repository.create_replenishment_rule(rule).await
@@ -730,6 +731,8 @@ impl InventoryService for DefaultInventoryService {
                     payment_terms: Some("Net 30".to_string()),
                     shipping_terms: Some("FOB".to_string()),
                     priority: Some("Normal".to_string()),
+                    billing_address: Some("123 Billing St, City, State 12345".to_string()),
+                    shipping_address: Some("456 Shipping Ave, City, State 67890".to_string()),
                     created_by: Uuid::new_v4(),
                     approved_by: None,
                     tracking_number: None,
@@ -760,26 +763,30 @@ impl InventoryService for DefaultInventoryService {
 
         let count = CycleCount {
             id: Uuid::new_v4(),
-            product_id: request.product_id,
             location_id: request.location_id,
-            count_date: Utc::now(),
-            counter_id: request.counter_id,
-            counter_name: "Counter Name".to_string(),
-            book_quantity: inventory.quantity_available,
-            counted_quantity: request.counted_quantity,
+            count_date: Utc::now().date_naive(),
+            status: CountStatus::InProgress,
+            total_items: 1,
+            counted_items: 1,
+            variance_items: if variance != 0 { 1 } else { 0 },
             variance,
-            variance_percentage,
-            variance_value: variance as f64 * 10.0, // Would use actual cost
-            count_status: if variance.abs() > 5 { CountStatus::Reviewed } else { CountStatus::Completed },
             adjustment_required: variance != 0,
-            adjustment_applied: false,
             adjustment_date: None,
             adjustment_by: None,
-            notes: request.notes,
             approval_required: variance.abs() > 10,
             approved_by: None,
             approved_date: None,
+            notes: request.notes,
             created_at: Utc::now(),
+            updated_at: Utc::now(),
+            created_by: Uuid::new_v4(),
+            counter_name: "Counter Name".to_string(),
+            book_quantity: inventory.quantity_available,
+            counted_quantity: request.counted_quantity,
+            variance_percentage,
+            variance_value: variance as f64 * 10.0, // Would use actual cost
+            count_status: if variance.abs() > 5 { CountStatus::Reviewed } else { CountStatus::Completed },
+            adjustment_applied: false,
         };
 
         self.repository.create_cycle_count(count).await

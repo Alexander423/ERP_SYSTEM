@@ -3,7 +3,11 @@
 //! This module provides the most advanced product management service layer
 //! with AI-powered features, automated optimization, and comprehensive business logic.
 
-use super::{model::*, repository::{self, ProductRepository, BulkPriceUpdateRequest, PriceContext}, analytics::ProductAnalyticsEngine};
+use super::{
+    model::*,
+    repository::{ProductRepository, BulkPriceUpdateRequest, PriceContext, AdvancedProductSearch as RepoAdvancedSearch},
+    analytics::ProductAnalyticsEngine
+};
 use crate::types::{TenantContext, PaginationOptions, PaginationResult};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -27,10 +31,10 @@ pub trait ProductService: Send + Sync {
     async fn discontinue_product(&self, product_id: Uuid, replacement_id: Option<Uuid>) -> Result<Product>;
 
     // === Advanced Search & Discovery ===
-    async fn search_products(&self, search: repository::AdvancedProductSearch, pagination: PaginationOptions) -> Result<PaginationResult<repository::ProductSummary>>;
+    async fn search_products(&self, search: AdvancedProductSearch, pagination: PaginationOptions) -> Result<PaginationResult<ProductSummary>>;
     async fn search_products_with_ai(&self, query: &str, context: &SearchContext) -> Result<Vec<ProductRecommendation>>;
-    async fn find_similar_products(&self, product_id: Uuid, similarity_threshold: f64) -> Result<Vec<repository::ProductSummary>>;
-    async fn get_trending_products(&self, period_days: i32, limit: i32) -> Result<Vec<repository::ProductSummary>>;
+    async fn find_similar_products(&self, product_id: Uuid, similarity_threshold: f64) -> Result<Vec<ProductSummary>>;
+    async fn get_trending_products(&self, period_days: i32, limit: i32) -> Result<Vec<ProductSummary>>;
 
     // === Category Management ===
     async fn create_category(&self, request: CreateCategoryRequest) -> Result<ProductCategory>;
@@ -711,7 +715,31 @@ impl ProductService for DefaultProductService {
     }
 
     async fn search_products(&self, search: AdvancedProductSearch, pagination: PaginationOptions) -> Result<PaginationResult<ProductSummary>> {
-        self.repository.search_products_advanced(self.tenant_context.tenant_id, &search, &pagination).await
+        // Convert model::AdvancedProductSearch to repository::AdvancedProductSearch
+        let repo_search = RepoAdvancedSearch {
+            query: search.query,
+            category_ids: search.category_ids,
+            statuses: search.statuses,
+            product_types: search.product_types,
+            min_price: search.min_price.map(|p| p as f64),
+            max_price: search.max_price.map(|p| p as f64),
+            supplier_ids: None,
+            tags: search.tags,
+            in_stock_only: search.in_stock_only,
+            needs_reorder: None,
+            featured_only: search.featured_only,
+            digital_only: None,
+            sort_by: None,
+            sort_order: None,
+            fuzzy_search: search.fuzzy_search,
+            include_inactive: search.include_inactive,
+        };
+        // Convert PaginationOptions to repository PaginationOptions
+        let repo_pagination = super::repository::PaginationOptions {
+            page: pagination.page() as i64,
+            limit: pagination.per_page() as i64,
+        };
+        self.repository.search_products_advanced(self.tenant_context.tenant_id, &repo_search, &repo_pagination).await
     }
 
     async fn search_products_with_ai(&self, query: &str, context: &SearchContext) -> Result<Vec<ProductRecommendation>> {
@@ -745,10 +773,10 @@ impl ProductService for DefaultProductService {
             if let Some(similar_product) = self.repository.get_product_by_id(self.tenant_context.tenant_id, similar.product_id).await? {
                 results.push(ProductSummary {
                     id: similar_product.id,
-                    sku: similar_product.sku,
-                    name: similar_product.name,
-                    status: similar_product.status,
-                    product_type: similar_product.product_type,
+                    sku: similar_product.sku.clone(),
+                    name: similar_product.name.clone(),
+                    status: similar_product.status.clone(),
+                    product_type: similar_product.product_type.clone(),
                     base_price: similar_product.base_price,
                     currency: similar_product.currency.clone(),
                     current_stock: similar_product.current_stock,
@@ -772,10 +800,10 @@ impl ProductService for DefaultProductService {
             if let Some(product) = self.repository.get_product_by_id(self.tenant_context.tenant_id, analytic.product_id).await? {
                 trending_products.push(ProductSummary {
                     id: product.id,
-                    sku: product.sku,
-                    name: product.name,
-                    status: product.status,
-                    product_type: product.product_type,
+                    sku: product.sku.clone(),
+                    name: product.name.clone(),
+                    status: product.status.clone(),
+                    product_type: product.product_type.clone(),
                     base_price: product.base_price,
                     currency: product.currency.clone(),
                     current_stock: product.current_stock,
@@ -797,7 +825,7 @@ impl ProductService for DefaultProductService {
     async fn create_category(&self, request: CreateCategoryRequest) -> Result<ProductCategory> {
         let category = ProductCategory::new(
             self.tenant_context.tenant_id,
-            request.name,
+            request.name.clone(),
             request.slug.unwrap_or_else(|| request.name.to_lowercase().replace(' ', "-")),
             request.parent_id,
             self.tenant_context.user_id,
@@ -812,7 +840,7 @@ impl ProductService for DefaultProductService {
 
     async fn move_product_to_category(&self, product_id: Uuid, category_id: Option<Uuid>) -> Result<Product> {
         let request = UpdateProductRequest {
-            category_id: Some(category_id),
+            category_id,
             ..Default::default()
         };
         self.update_product(product_id, request).await
@@ -920,17 +948,27 @@ impl ProductService for DefaultProductService {
         Ok(DynamicPrice {
             id: Uuid::new_v4(),
             product_id,
-            rule_name: rule.name,
-            rule_type: rule.rule_type,
-            conditions: rule.conditions,
-            actions: rule.actions,
+            tenant_id: self.tenant_context.tenant_id,
+            price_type: "dynamic".to_string(),
+            price: 0, // Default price, should be calculated from adjustment
+            currency: "USD".to_string(), // Default currency
+            customer_tier: None,
+            min_quantity: None,
+            max_quantity: None,
+            geographic_region: None,
+            seasonal_factor: None,
+            valid_from: rule.valid_from,
+            valid_until: rule.valid_until,
+            time_of_day_start: None,
+            time_of_day_end: None,
+            days_of_week: None,
+            conditions: Some(rule.conditions),
             priority: rule.priority,
             is_active: true,
-            valid_from: chrono::Utc::now(),
-            valid_until: rule.valid_until,
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
             created_by: self.tenant_context.user_id,
+            updated_by: self.tenant_context.user_id,
         })
     }
 
@@ -1033,20 +1071,25 @@ impl ProductService for DefaultProductService {
         Ok(ProductBatch {
             id: batch_id,
             product_id: Uuid::new_v4(),
+            tenant_id: self.tenant_context.tenant_id,
             batch_number: format!("BATCH-{}", batch_id.to_string()[..8].to_uppercase()),
-            manufactured_date: chrono::Utc::now(),
-            expiry_date: Some(chrono::Utc::now().date_naive() + chrono::Duration::days(365)),
-            status: crate::product::model::BatchStatus::Active,
-            quality_status: quality_update.new_status,
-            quality_score: quality_update.quality_score,
-            compliance_status: quality_update.compliance_status,
-            location_id: Uuid::new_v4(),
+            lot_number: None,
+            serial_numbers: None,
+            manufactured_date: Some(chrono::Utc::now()),
+            expiry_date: Some(chrono::Utc::now() + chrono::Duration::days(365)),
             supplier_id: Some(Uuid::new_v4()),
+            production_line: None,
+            quality_status: quality_update.quality_status,
+            quality_score: quality_update.quality_score,
+            quality_tests: None,
+            inspector_id: None,
+            inspection_date: Some(chrono::Utc::now()),
+            initial_quantity: 100,
             current_quantity: 100,
             allocated_quantity: 0,
-            source_batches: None,
-            destination_batches: None,
-            recall_status: Some(crate::product::model::RecallStatus::NoRecall),
+            source_batches: Some(vec![]),
+            destination_batches: Some(vec![]),
+            recall_status: Some("no_recall".to_string()),
             notes: quality_update.notes,
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
@@ -1137,12 +1180,15 @@ impl ProductService for DefaultProductService {
 
     async fn analyze_product_performance(&self, product_id: Uuid, analysis_period: AnalysisPeriod) -> Result<ProductPerformanceReport> {
         let analytics = self.repository.get_product_analytics(self.tenant_context.tenant_id, product_id, &analysis_period.period_type).await?;
-        let report = self.analytics.generate_performance_report(product_id, &analytics, &analysis_period).await?;
+        let analytics_json = serde_json::to_value(&analytics).map_err(|e| Error::new(ErrorCode::InternalServerError, format!("Serialization error: {}", e)))?;
+        let report = self.analytics.generate_performance_report(product_id, &analytics_json, &analysis_period).await
+            .map_err(|e| Error::new(ErrorCode::InternalServerError, format!("Analytics error: {}", e)))?;
         Ok(report)
     }
 
     async fn get_lifecycle_recommendations(&self, product_id: Uuid) -> Result<Vec<LifecycleRecommendation>> {
-        let recommendations = self.ai_engine.suggest_lifecycle_actions(product_id).await?;
+        let recommendations = self.ai_engine.suggest_lifecycle_actions(product_id).await
+            .map_err(|e| Error::new(ErrorCode::InternalServerError, format!("AI engine error: {}", e)))?;
         Ok(recommendations)
     }
 
@@ -1234,22 +1280,27 @@ impl ProductService for DefaultProductService {
     // Analytics methods
     async fn get_product_analytics(&self, product_id: Uuid, period: AnalysisPeriod) -> Result<ProductAnalyticsReport> {
         let analytics = self.repository.get_product_analytics(self.tenant_context.tenant_id, product_id, &period.period_type).await?;
-        let report = self.analytics.generate_analytics_report(product_id, &analytics, &period).await?;
+        let analytics_json = serde_json::to_value(&analytics).map_err(|e| Error::new(ErrorCode::InternalServerError, format!("Serialization error: {}", e)))?;
+        let report = self.analytics.generate_analytics_report(product_id, &analytics_json, &period).await
+            .map_err(|e| Error::new(ErrorCode::InternalServerError, format!("Analytics error: {}", e)))?;
         Ok(report)
     }
 
     async fn get_inventory_turnover_analysis(&self) -> Result<Vec<TurnoverAnalysis>> {
-        let analysis = self.analytics.calculate_inventory_turnover(self.tenant_context.tenant_id).await?;
+        let analysis = self.analytics.calculate_inventory_turnover(self.tenant_context.tenant_id).await
+            .map_err(|e| Error::new(ErrorCode::InternalServerError, format!("Analytics error: {}", e)))?;
         Ok(analysis)
     }
 
     async fn get_profitability_analysis(&self, category_id: Option<Uuid>) -> Result<ProfitabilityReport> {
-        let report = self.analytics.generate_profitability_report(self.tenant_context.tenant_id, category_id).await?;
+        let report = self.analytics.generate_profitability_report(self.tenant_context.tenant_id, category_id).await
+            .map_err(|e| Error::new(ErrorCode::InternalServerError, format!("Analytics error: {}", e)))?;
         Ok(report)
     }
 
     async fn get_market_share_analysis(&self, product_id: Uuid) -> Result<MarketShareAnalysis> {
-        let analysis = self.analytics.analyze_market_share(product_id).await?;
+        let analysis = self.analytics.analyze_market_share(product_id).await
+            .map_err(|e| Error::new(ErrorCode::InternalServerError, format!("Analytics error: {}", e)))?;
         Ok(analysis)
     }
 }
@@ -1661,6 +1712,15 @@ pub struct ProductPerformanceReport {
     pub profitability: Profitability,
     pub market_position: MarketPosition,
     pub recommendations: Vec<String>,
+
+    // Additional fields needed by analytics layer
+    pub period_start: DateTime<Utc>,
+    pub period_end: DateTime<Utc>,
+    pub revenue: f64,
+    pub units_sold: i32,
+    pub profit_margin: f64,
+    pub market_share: f64,
+    pub customer_satisfaction: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

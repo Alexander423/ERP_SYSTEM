@@ -3,12 +3,15 @@
 //! Core data structures for multi-location inventory management with
 //! advanced features for optimization, forecasting, and real-time tracking.
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Utc, NaiveDate};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use uuid::Uuid;
 use std::collections::HashMap;
 use crate::types::{ValuationMethod, ReservationType};
+use rust_decimal::Decimal;
+
+use serde_json::Value;
 
 // These types are defined directly in this inventory module
 // (removed dependency on product module)
@@ -75,7 +78,7 @@ pub enum MovementVelocity {
     Seasonal, // Seasonal patterns
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct StorageRequirements {
     pub temperature_min: Option<f64>,
     pub temperature_max: Option<f64>,
@@ -91,23 +94,23 @@ pub struct StorageRequirements {
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct InventoryMovement {
-    pub id: Uuid,
-    pub product_id: Uuid,
-    pub location_id: Uuid,
-    pub movement_type: MovementType,
-    pub quantity: i32,
-    pub unit_cost: Option<f64>,
+    pub id: Option<Uuid>,
+    pub product_id: Option<Uuid>,
+    pub location_id: Option<Uuid>,
+    pub movement_type: Option<String>,
+    pub quantity: Option<i32>,
+    pub unit_cost: Option<Decimal>,
     pub reference_document: Option<String>,
     pub reference_number: Option<String>,
     pub reason: Option<String>,
     pub batch_number: Option<String>,
     pub serial_numbers: Option<Vec<String>>,
-    pub expiry_date: Option<DateTime<Utc>>,
-    pub operator_id: Uuid,
-    pub operator_name: String,
-    pub created_at: DateTime<Utc>,
-    pub effective_date: DateTime<Utc>,
-    pub audit_trail: HashMap<String, serde_json::Value>,
+    pub expiry_date: Option<NaiveDate>,
+    pub operator_id: Option<Uuid>,
+    pub operator_name: Option<String>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub effective_date: Option<DateTime<Utc>>,
+    pub audit_trail: Option<Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type)]
@@ -164,13 +167,14 @@ pub enum ForecastMethod {
     HybridModel,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ForecastAccuracy {
     pub mean_absolute_error: f64,
     pub mean_squared_error: f64,
     pub mean_absolute_percentage_error: f64,
     pub forecast_bias: f64,
     pub tracking_signal: f64,
+    pub accuracy_percentage: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
@@ -179,10 +183,10 @@ pub struct StockTransfer {
     pub product_id: Uuid,
     pub from_location_id: Uuid,
     pub to_location_id: Uuid,
-    pub quantity_requested: i32,
+    pub quantity: i32,
     pub quantity_shipped: Option<i32>,
     pub quantity_received: Option<i32>,
-    pub transfer_status: TransferStatus,
+    pub status: TransferStatus,
     pub priority: TransferPriority,
     pub reason: String,
     pub requested_by: Uuid,
@@ -192,14 +196,14 @@ pub struct StockTransfer {
     pub requested_date: DateTime<Utc>,
     pub approved_date: Option<DateTime<Utc>>,
     pub shipped_date: Option<DateTime<Utc>>,
-    pub expected_delivery_date: Option<DateTime<Utc>>,
+    pub received_date: Option<DateTime<Utc>>,
     pub actual_delivery_date: Option<DateTime<Utc>>,
     pub tracking_number: Option<String>,
     pub carrier: Option<String>,
     pub shipping_cost: Option<f64>,
     pub notes: Option<String>,
     pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_by: Uuid,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, sqlx::Type)]
@@ -267,26 +271,32 @@ pub enum OptimizationAction {
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct CycleCount {
     pub id: Uuid,
-    pub product_id: Uuid,
     pub location_id: Uuid,
-    pub count_date: DateTime<Utc>,
-    pub counter_id: Uuid,
-    pub counter_name: String,
-    pub book_quantity: i32,
-    pub counted_quantity: i32,
+    pub count_date: NaiveDate,
+    pub status: CountStatus,
+    pub total_items: i32,
+    pub counted_items: i32,
+    pub variance_items: i32,
     pub variance: i32,
-    pub variance_percentage: f64,
-    pub variance_value: f64,
-    pub count_status: CountStatus,
     pub adjustment_required: bool,
-    pub adjustment_applied: bool,
     pub adjustment_date: Option<DateTime<Utc>>,
     pub adjustment_by: Option<Uuid>,
-    pub notes: Option<String>,
     pub approval_required: bool,
     pub approved_by: Option<Uuid>,
     pub approved_date: Option<DateTime<Utc>>,
+    pub notes: Option<String>,
     pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub created_by: Uuid,
+
+    // Additional fields needed by service layer
+    pub counter_name: String,
+    pub book_quantity: i32,
+    pub counted_quantity: i32,
+    pub variance_percentage: f64,
+    pub variance_value: f64,
+    pub count_status: CountStatus,
+    pub adjustment_applied: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, sqlx::Type)]
@@ -321,6 +331,14 @@ pub struct InventoryReservation {
     pub created_by: Uuid,
     pub released_at: Option<DateTime<Utc>>,
     pub released_by: Option<Uuid>,
+
+    // Additional fields expected by repository layer
+    pub quantity: i32,  // Alias for quantity_reserved for repository compatibility
+    pub reservation_type: String,  // Additional type field expected by repository
+    pub status: ReservationStatus,  // Alias for reservation_status for repository compatibility
+    pub reserved_until: Option<DateTime<Utc>>,  // Alias for expiry_date for repository compatibility
+    pub fulfilled_at: Option<DateTime<Utc>>,
+    pub fulfilled_quantity: i32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type)]
@@ -339,6 +357,15 @@ pub enum ReservationPriority {
     Normal,
     High,
     Critical,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type)]
+#[sqlx(type_name = "alert_status", rename_all = "snake_case")]
+pub enum AlertStatus {
+    Active,
+    Acknowledged,
+    Resolved,
+    Dismissed,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
@@ -363,6 +390,10 @@ pub struct PurchaseOrder {
     pub created_by: Uuid,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+
+    // Additional fields expected by repository layer
+    pub shipping_address: Option<String>,
+    pub billing_address: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
@@ -398,13 +429,18 @@ pub struct InventoryAlert {
     pub location_id: Uuid,
     pub alert_type: AlertType,
     pub severity: AlertSeverity,
-    pub message: String,
-    pub threshold_value: Option<f64>,
-    pub current_value: Option<f64>,
-    pub is_acknowledged: bool,
-    pub acknowledged_by: Option<Uuid>,
-    pub acknowledged_at: Option<DateTime<Utc>>,
+    pub title: String,
+    pub description: Option<String>,
+    pub current_quantity: i32,
+    pub threshold_value: Decimal,
+    pub recommended_action: Option<String>,
+    pub alert_status: AlertStatus,
     pub created_at: DateTime<Utc>,
+    pub acknowledged_at: Option<DateTime<Utc>>,
+    pub acknowledged_by: Option<Uuid>,
+    pub resolved_at: Option<DateTime<Utc>>,
+    pub resolved_by: Option<Uuid>,
+    pub resolution_notes: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type)]
@@ -463,6 +499,19 @@ pub struct InventoryKPI {
     pub fill_rate: f64,
     pub carrying_cost: f64,
     pub accuracy_percentage: f64,
+
+    // Additional fields needed by repository layer
+    pub id: Uuid,
+    pub inventory_turnover: f64,
+    pub inventory_turnover_days: f64,
+    pub carrying_cost_rate: f64,
+    pub gross_margin_rate: f64,
+    pub inventory_accuracy: f64,
+    pub obsolete_inventory_rate: f64,
+    pub dead_stock_rate: f64,
+    pub average_inventory_level: f64,
+    pub total_inventory_value: f64,
+    pub calculated_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -475,6 +524,22 @@ pub struct InventoryDashboard {
     pub total_inventory_value: f64,
     pub top_moving_products: Vec<String>,
     pub recent_alerts: Vec<InventoryAlert>,
+
+    // Additional fields needed by repository layer
+    pub id: Uuid,
+    pub snapshot_date: DateTime<Utc>,
+    pub total_sku_count: i32,
+    pub stockout_count: i32,
+    pub low_stock_count: i32,
+    pub excess_stock_count: i32,
+    pub slow_moving_count: i32,
+    pub inventory_turnover: f64,
+    pub fill_rate: f64,
+    pub carrying_cost_percentage: f64,
+    pub abc_analysis: HashMap<String, i32>,
+    pub top_movers: Vec<String>,
+    pub pending_orders: Vec<String>,
+    pub created_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
@@ -521,6 +586,13 @@ pub struct ReplenishmentRule {
     pub active: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+
+    // Additional fields expected by repository layer
+    pub economic_order_quantity: f64,
+    pub preferred_supplier_id: Option<Uuid>,
+    pub is_active: bool,  // Alias for active for repository compatibility
+    pub last_triggered: Option<DateTime<Utc>>,
+    pub created_by: Uuid,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type)]
@@ -624,6 +696,13 @@ pub struct UpdateReplenishmentRuleRequest {
     pub automatic_ordering: Option<bool>,
     pub supplier_id: Option<Uuid>,
     pub active: Option<bool>,
+
+    // Additional fields needed by repository layer
+    pub product_id: Option<Uuid>,
+    pub location_id: Option<Uuid>,
+    pub economic_order_quantity: Option<f64>,
+    pub preferred_supplier_id: Option<Uuid>,
+    pub is_active: Option<bool>,  // Alias for active for repository compatibility
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

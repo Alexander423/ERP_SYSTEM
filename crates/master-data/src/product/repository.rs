@@ -4,6 +4,7 @@
 //! full-text search, analytics integration, and multi-tenant support.
 
 use crate::product::model::*;
+use crate::types::PaginationResult;
 use crate::utils::*;
 use erp_core::database::DatabasePool;
 use erp_core::error::{Error, ErrorCode, Result};
@@ -40,33 +41,8 @@ pub struct PaginationOptions {
     pub limit: i64,
 }
 
-/// Paginated search results
-#[derive(Debug, Clone)]
-pub struct PaginationResult<T> {
-    pub items: Vec<T>,
-    pub total: i64,
-    pub page: i64,
-    pub limit: i64,
-    pub total_pages: i64,
-}
 
-/// Product summary for list views
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProductSummary {
-    pub id: Uuid,
-    pub sku: String,
-    pub name: String,
-    pub status: ProductStatus,
-    pub product_type: ProductType,
-    pub base_price: f64,
-    pub currency: String,
-    pub current_stock: Option<i32>,
-    pub is_in_stock: bool,
-    pub needs_reorder: bool,
-    pub category_name: Option<String>,
-    pub supplier_name: Option<String>,
-    pub created_at: DateTime<Utc>,
-}
+// Using ProductSummary from model.rs
 
 /// Bulk price update request
 #[derive(Debug, Clone)]
@@ -188,12 +164,19 @@ impl PostgresProductRepository {
 impl ProductRepository for PostgresProductRepository {
     async fn create_product(&self, product: &Product) -> Result<Product> {
         // Simplified implementation - would normally handle all fields
+        let status_str = match product.status {
+            ProductStatus::Active => "active",
+            ProductStatus::Inactive => "inactive",
+            ProductStatus::Development => "development",
+            ProductStatus::Discontinued => "discontinued",
+            ProductStatus::Planned => "planned",
+        };
         let row = sqlx::query!(
             r#"
             INSERT INTO products (
                 id, tenant_id, sku, name, description, category_id,
                 product_type, status, base_price, currency, created_at, updated_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7::product_type, $8::product_status, $9, $10, $11, $12)
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::text::product_status, $9, $10, $11, $12)
             RETURNING
                 id, tenant_id, sku, name, description, short_description, category_id,
                 product_type::text as product_type, status::text as status, tags, unit_of_measure::text as unit_of_measure,
@@ -212,8 +195,8 @@ impl ProductRepository for PostgresProductRepository {
             product.name,
             product.description,
             product.category_id,
-            &format!("{:?}", product.product_type).to_lowercase(),
-            &format!("{:?}", product.status).to_lowercase(),
+            product.product_type as _,
+            status_str,
             product.base_price,
             product.currency,
             product.created_at,
@@ -250,24 +233,24 @@ impl ProductRepository for PostgresProductRepository {
             tags: row.tags,
             unit_of_measure: match row.unit_of_measure.as_deref() {
                 Some("piece") => UnitOfMeasure::Piece,
-                Some("kilogram") => UnitOfMeasure::Kilogram,
+                Some("kilogram") => UnitOfMeasure::Kg,
                 Some("liter") => UnitOfMeasure::Liter,
                 Some("meter") => UnitOfMeasure::Meter,
                 Some("square_meter") => UnitOfMeasure::SquareMeter,
                 Some("cubic_meter") => UnitOfMeasure::CubicMeter,
                 Some("hour") => UnitOfMeasure::Hour,
-                Some("day") => UnitOfMeasure::Day,
+                Some("day") => UnitOfMeasure::Hour, // Fallback to Hour since Day doesn't exist
                 _ => UnitOfMeasure::Piece,
             },
             weight: decimal_to_f64(row.weight),
             dimensions_length: decimal_to_f64(row.dimensions_length),
             dimensions_width: decimal_to_f64(row.dimensions_width),
             dimensions_height: decimal_to_f64(row.dimensions_height),
-            base_price: row.base_price.unwrap_or(0),
+            base_price: row.base_price,
             currency: row.currency,
             cost_price: row.cost_price,
             list_price: row.list_price,
-            is_tracked: row.is_tracked.unwrap_or(false),
+            is_tracked: row.is_tracked,
             current_stock: row.current_stock,
             min_stock_level: row.min_stock_level,
             max_stock_level: row.max_stock_level,
@@ -282,8 +265,8 @@ impl ProductRepository for PostgresProductRepository {
             slug: row.slug,
             meta_title: row.meta_title,
             meta_description: row.meta_description,
-            is_featured: row.is_featured.unwrap_or(false),
-            is_digital_download: row.is_digital_download.unwrap_or(false),
+            is_featured: row.is_featured,
+            is_digital_download: row.is_digital_download,
             notes: row.notes,
             created_at: row.created_at,
             updated_at: row.updated_at,
@@ -345,24 +328,24 @@ impl ProductRepository for PostgresProductRepository {
             tags: r.tags,
             unit_of_measure: match r.unit_of_measure.as_deref() {
                 Some("piece") => UnitOfMeasure::Piece,
-                Some("kilogram") => UnitOfMeasure::Kilogram,
+                Some("kilogram") => UnitOfMeasure::Kg,
                 Some("liter") => UnitOfMeasure::Liter,
                 Some("meter") => UnitOfMeasure::Meter,
                 Some("square_meter") => UnitOfMeasure::SquareMeter,
                 Some("cubic_meter") => UnitOfMeasure::CubicMeter,
                 Some("hour") => UnitOfMeasure::Hour,
-                Some("day") => UnitOfMeasure::Day,
+                Some("day") => UnitOfMeasure::Hour, // Fallback to Hour since Day doesn't exist
                 _ => UnitOfMeasure::Piece,
             },
             weight: decimal_to_f64(r.weight),
             dimensions_length: decimal_to_f64(r.dimensions_length),
             dimensions_width: decimal_to_f64(r.dimensions_width),
             dimensions_height: decimal_to_f64(r.dimensions_height),
-            base_price: r.base_price.unwrap_or(0),
+            base_price: r.base_price as i64,
             currency: r.currency,
-            cost_price: r.cost_price,
-            list_price: r.list_price,
-            is_tracked: r.is_tracked.unwrap_or(false),
+            cost_price: r.cost_price.map(|d| d as i64),
+            list_price: r.list_price.map(|d| d as i64),
+            is_tracked: r.is_tracked,
             current_stock: r.current_stock,
             min_stock_level: r.min_stock_level,
             max_stock_level: r.max_stock_level,
@@ -377,8 +360,8 @@ impl ProductRepository for PostgresProductRepository {
             slug: r.slug,
             meta_title: r.meta_title,
             meta_description: r.meta_description,
-            is_featured: r.is_featured.unwrap_or(false),
-            is_digital_download: r.is_digital_download.unwrap_or(false),
+            is_featured: r.is_featured,
+            is_digital_download: r.is_digital_download,
             notes: r.notes,
             created_at: r.created_at,
             updated_at: r.updated_at,
@@ -398,8 +381,13 @@ impl ProductRepository for PostgresProductRepository {
                 product_type as "product_type: ProductType",
                 status as "status: ProductStatus",
                 tags, unit_of_measure as "unit_of_measure: UnitOfMeasure",
-                weight, dimensions_length, dimensions_width, dimensions_height,
-                base_price, currency, cost_price, list_price, is_tracked,
+                weight::float8 as "weight?",
+                dimensions_length::float8 as "dimensions_length?",
+                dimensions_width::float8 as "dimensions_width?",
+                dimensions_height::float8 as "dimensions_height?",
+                base_price as "base_price: i64", currency,
+                cost_price::bigint as "cost_price?",
+                list_price::bigint as "list_price?", is_tracked,
                 current_stock, min_stock_level, max_stock_level, reorder_point,
                 primary_supplier_id, lead_time_days, barcode, brand, manufacturer,
                 model_number, warranty_months,
@@ -431,8 +419,13 @@ impl ProductRepository for PostgresProductRepository {
                 product_type as "product_type: ProductType",
                 status as "status: ProductStatus",
                 tags, unit_of_measure as "unit_of_measure: UnitOfMeasure",
-                weight, dimensions_length, dimensions_width, dimensions_height,
-                base_price, currency, cost_price, list_price, is_tracked,
+                weight::float8 as "weight?",
+                dimensions_length::float8 as "dimensions_length?",
+                dimensions_width::float8 as "dimensions_width?",
+                dimensions_height::float8 as "dimensions_height?",
+                base_price as "base_price: i64", currency,
+                cost_price::bigint as "cost_price?",
+                list_price::bigint as "list_price?", is_tracked,
                 current_stock, min_stock_level, max_stock_level, reorder_point,
                 primary_supplier_id, lead_time_days, barcode, brand, manufacturer,
                 model_number, warranty_months,

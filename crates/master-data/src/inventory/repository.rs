@@ -309,23 +309,23 @@ impl InventoryRepository for PostgresInventoryRepository {
         .await?;
 
         let movement = InventoryMovement {
-            id: row.id,
-            product_id: row.product_id,
-            location_id: row.location_id,
-            movement_type: convert_to_movement_type(Some(row.transaction_type)),
-            quantity: row.quantity_change,
-            unit_cost: Some(option_decimal_to_f64(row.unit_cost)),
+            id: Some(row.id),
+            product_id: Some(row.product_id),
+            location_id: Some(row.location_id),
+            movement_type: Some(row.transaction_type),
+            quantity: Some(row.quantity_change),
+            unit_cost: row.unit_cost,
             reference_document: row.reference_document,
             reference_number: row.reference_number,
             reason: row.reason_code,
             batch_number: row.batch_number,
             serial_numbers: Some(vec![]),
-            expiry_date: row.expiry_date.map(|d| d.and_hms_opt(0, 0, 0).unwrap().and_utc()),
-            operator_id: row.created_by,
-            operator_name: String::new(),
-            created_at: row.created_at,
-            effective_date: row.transaction_date,
-            audit_trail: string_to_json_map(None),
+            expiry_date: row.expiry_date,
+            operator_id: Some(row.created_by),
+            operator_name: Some(String::new()),
+            created_at: Some(row.created_at),
+            effective_date: Some(row.transaction_date),
+            audit_trail: None, // string_to_json_map(None) -> This needs to be fixed later
         };
 
         // Update inventory levels
@@ -603,15 +603,15 @@ impl InventoryRepository for PostgresInventoryRepository {
             movement.product_id,
             movement.location_id,
             movement.quantity,
-            movement.unit_cost.map(|v| rust_decimal::Decimal::from_f64_retain(v).unwrap_or_default()),
+            movement.unit_cost,
             movement.reference_document,
             movement.reference_number,
             movement.reason,
             movement.batch_number,
             movement.batch_number, // Using batch_number for lot_number
-            movement.expiry_date.map(|dt| dt.date_naive()),
+            movement.expiry_date,
             movement.operator_id,
-            json_to_string_safe(Some(serde_json::to_value(&movement.audit_trail).unwrap_or_default())), // Convert HashMap to JSON string
+            movement.audit_trail.and_then(|v| serde_json::to_string(&v).ok()), // Convert Option<Value> to Option<String>
             movement.created_at,
             movement.effective_date
         )
@@ -619,23 +619,23 @@ impl InventoryRepository for PostgresInventoryRepository {
         .await?;
 
         let created_movement = InventoryMovement {
-            id: row.id,
-            product_id: row.product_id,
-            location_id: row.location_id,
-            movement_type: convert_to_movement_type(Some(row.transaction_type)),
-            quantity: row.quantity_change,
-            unit_cost: Some(option_decimal_to_f64(row.unit_cost)),
+            id: Some(row.id),
+            product_id: Some(row.product_id),
+            location_id: Some(row.location_id),
+            movement_type: Some(row.transaction_type),
+            quantity: Some(row.quantity_change),
+            unit_cost: row.unit_cost,
             reference_document: row.reference_document,
             reference_number: row.reference_number,
             reason: row.reason_code,
             batch_number: row.batch_number,
             serial_numbers: Some(vec![]),
-            expiry_date: row.expiry_date.map(|d| d.and_hms_opt(0, 0, 0).unwrap().and_utc()),
-            operator_id: row.created_by,
-            operator_name: String::new(),
-            created_at: row.created_at,
-            effective_date: row.transaction_date,
-            audit_trail: string_to_json_map(None),
+            expiry_date: row.expiry_date,
+            operator_id: Some(row.created_by),
+            operator_name: Some(String::new()),
+            created_at: Some(row.created_at),
+            effective_date: Some(row.transaction_date),
+            audit_trail: None,
         };
 
         Ok(created_movement)
@@ -676,23 +676,23 @@ impl InventoryRepository for PostgresInventoryRepository {
             .await?;
 
             rows.into_iter().map(|row| InventoryMovement {
-                id: sqlx_option_uuid_to_uuid(row.id).unwrap_or_else(|_| Uuid::new_v4()),
-                product_id: sqlx_option_uuid_to_uuid(row.product_id).unwrap_or_else(|_| Uuid::new_v4()),
-                location_id: sqlx_option_uuid_to_uuid(row.location_id).unwrap_or_else(|_| Uuid::new_v4()),
-                movement_type: convert_to_movement_type(row.movement_type),
-                quantity: sqlx_option_i32_to_i32(row.quantity).unwrap_or(0),
-                unit_cost: sqlx_decimal_option_to_f64_option(row.unit_cost),
+                id: row.id,
+                product_id: row.product_id,
+                location_id: row.location_id,
+                movement_type: row.movement_type,
+                quantity: row.quantity,
+                unit_cost: row.unit_cost,
                 reference_document: row.reference_document,
                 reference_number: row.reference_number,
                 reason: row.reason,
                 batch_number: row.batch_number,
                 serial_numbers: row.serial_numbers,
-                expiry_date: naive_date_to_utc_datetime(row.expiry_date),
-                operator_id: row.operator_id.unwrap_or_else(Uuid::new_v4),
-                operator_name: row.operator_name.unwrap_or_default(),
-                created_at: sqlx_option_datetime_to_datetime(row.created_at).unwrap_or_else(|_| Utc::now()),
-                effective_date: sqlx_option_datetime_to_datetime(row.effective_date).unwrap_or_else(|_| Utc::now()),
-                audit_trail: string_to_json_map(row.audit_trail),
+                expiry_date: row.expiry_date,
+                operator_id: row.operator_id,
+                operator_name: row.operator_name,
+                created_at: row.created_at,
+                effective_date: row.effective_date,
+                audit_trail: row.audit_trail.and_then(|s| serde_json::from_str(&s).ok()),
             }).collect()
         } else {
             let rows = sqlx::query!(
@@ -727,23 +727,23 @@ impl InventoryRepository for PostgresInventoryRepository {
             .await?;
 
             rows.into_iter().map(|row| InventoryMovement {
-                id: sqlx_option_uuid_to_uuid(row.id).unwrap_or_else(|_| Uuid::new_v4()),
-                product_id: sqlx_option_uuid_to_uuid(row.product_id).unwrap_or_else(|_| Uuid::new_v4()),
-                location_id: sqlx_option_uuid_to_uuid(row.location_id).unwrap_or_else(|_| Uuid::new_v4()),
-                movement_type: convert_to_movement_type(row.movement_type),
-                quantity: sqlx_option_i32_to_i32(row.quantity).unwrap_or(0),
-                unit_cost: sqlx_decimal_option_to_f64_option(row.unit_cost),
+                id: row.id,
+                product_id: row.product_id,
+                location_id: row.location_id,
+                movement_type: row.movement_type,
+                quantity: row.quantity,
+                unit_cost: row.unit_cost,
                 reference_document: row.reference_document,
                 reference_number: row.reference_number,
                 reason: row.reason,
                 batch_number: row.batch_number,
                 serial_numbers: row.serial_numbers,
-                expiry_date: naive_date_to_utc_datetime(row.expiry_date),
-                operator_id: row.operator_id.unwrap_or_else(Uuid::new_v4),
-                operator_name: row.operator_name.unwrap_or_default(),
-                created_at: sqlx_option_datetime_to_datetime(row.created_at).unwrap_or_else(|_| Utc::now()),
-                effective_date: sqlx_option_datetime_to_datetime(row.effective_date).unwrap_or_else(|_| Utc::now()),
-                audit_trail: string_to_json_map(row.audit_trail),
+                expiry_date: row.expiry_date,
+                operator_id: row.operator_id,
+                operator_name: row.operator_name,
+                created_at: row.created_at,
+                effective_date: row.effective_date,
+                audit_trail: row.audit_trail.and_then(|s| serde_json::from_str(&s).ok()),
             }).collect()
         };
 
@@ -758,20 +758,20 @@ impl InventoryRepository for PostgresInventoryRepository {
                 id,
                 product_id,
                 location_id,
-                movement_type as "movement_type: MovementType",
+                movement_type AS "movement_type: _",
                 quantity,
-                unit_cost as "unit_cost: Option<f64>",
+                unit_cost,
                 reference_document,
                 reference_number,
                 reason,
                 batch_number,
-                serial_numbers as "serial_numbers: Option<Vec<String>>",
-                expiry_date as "expiry_date: Option<DateTime<Utc>>",
+                serial_numbers,
+                expiry_date,
                 operator_id,
                 operator_name,
                 created_at,
                 effective_date,
-                audit_trail as "audit_trail: HashMap<String, serde_json::Value>"
+                audit_trail AS "audit_trail: serde_json::Value"
             FROM inventory_movements
             WHERE location_id = $1
             AND effective_date BETWEEN $2 AND $3

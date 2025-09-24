@@ -157,7 +157,7 @@ pub trait InventoryOptimizationEngine: Send + Sync {
         parameters: &OptimizationParameters,
     ) -> Result<OptimizationResult>;
 
-    async fn optimize_location_inventory(
+    async fn optimize_location_items(
         &self,
         location_id: Uuid,
         parameters: &OptimizationParameters,
@@ -346,14 +346,14 @@ impl PostgresInventoryOptimizationEngine {
     ) -> Result<Vec<(DateTime<Utc>, f64)>> {
         let rows = sqlx::query!(
             r#"
-            SELECT movement_date,
-                   SUM(CASE WHEN movement_type IN ('sales_shipment', 'transfer_out', 'production_consumption') THEN ABS(quantity) ELSE 0 END) as "daily_demand!: rust_decimal::Decimal"
+            SELECT transaction_date,
+                   SUM(CASE WHEN movement_type IN ('outbound', 'transfer') THEN ABS(quantity) ELSE 0 END) as "daily_demand!: rust_decimal::Decimal"
             FROM inventory_movements
             WHERE product_id = $1
               AND location_id = $2
-              AND movement_date >= NOW() - INTERVAL '1 day' * $3
-            GROUP BY movement_date
-            ORDER BY movement_date
+              AND transaction_date >= NOW() - INTERVAL '1 day' * $3
+            GROUP BY transaction_date
+            ORDER BY transaction_date
             "#,
             product_id,
             location_id,
@@ -365,7 +365,9 @@ impl PostgresInventoryOptimizationEngine {
 
         Ok(rows
             .into_iter()
-            .map(|row| (row.movement_date, row.daily_demand.to_f64().unwrap_or(0.0)))
+            .filter_map(|row| {
+                row.transaction_date.map(|date| (date, row.daily_demand.to_f64().unwrap_or(0.0)))
+            })
             .collect())
     }
 
@@ -550,13 +552,13 @@ impl InventoryOptimizationEngine for PostgresInventoryOptimizationEngine {
         })
     }
 
-    async fn optimize_location_inventory(
+    async fn optimize_location_items(
         &self,
         location_id: Uuid,
         parameters: &OptimizationParameters,
     ) -> Result<InventoryOptimizationReport> {
         let products = sqlx::query!(
-            "SELECT DISTINCT product_id FROM location_inventory WHERE location_id = $1",
+            "SELECT DISTINCT product_id FROM location_items WHERE location_id = $1",
             location_id
         )
         .fetch_all(&self.pool)
@@ -621,15 +623,15 @@ impl InventoryOptimizationEngine for PostgresInventoryOptimizationEngine {
                 let products = sqlx::query!(
                     r#"
                     SELECT p.product_id,
-                           from_inv.current_stock as from_stock,
-                           to_inv.current_stock as to_stock
-                    FROM (SELECT DISTINCT product_id FROM location_inventory
+                           from_inv.quantity_available as from_stock,
+                           to_inv.quantity_available as to_stock
+                    FROM (SELECT DISTINCT product_id FROM location_items
                           WHERE location_id = $1 OR location_id = $2) p
-                    LEFT JOIN location_inventory from_inv ON p.product_id = from_inv.product_id
+                    LEFT JOIN location_items from_inv ON p.product_id = from_inv.product_id
                               AND from_inv.location_id = $1
-                    LEFT JOIN location_inventory to_inv ON p.product_id = to_inv.product_id
+                    LEFT JOIN location_items to_inv ON p.product_id = to_inv.product_id
                               AND to_inv.location_id = $2
-                    WHERE from_inv.current_stock > 100 AND (to_inv.current_stock < 50 OR to_inv.current_stock IS NULL)
+                    WHERE from_inv.quantity_available > 100 AND (to_inv.quantity_available < 50 OR to_inv.quantity_available IS NULL)
                     "#,
                     from_location,
                     to_location
@@ -639,7 +641,7 @@ impl InventoryOptimizationEngine for PostgresInventoryOptimizationEngine {
                 .map_err(|e| MasterDataError::DatabaseError(e.to_string()))?;
 
                 for product in products {
-                    let transfer_quantity = (product.from_stock.unwrap_or(rust_decimal::Decimal::ZERO).to_f64().unwrap_or(0.0) * 0.3).min(100.0);
+                    let transfer_quantity = ((product.from_stock as f64) * 0.3).min(100.0);
                     if transfer_quantity > 10.0 {
                         recommended_transfers.push(RecommendedStockTransfer {
                             from_location_id: *from_location,
@@ -806,7 +808,7 @@ impl InventoryOptimizationEngine for PostgresInventoryOptimizationEngine {
         optimization_parameters: &OptimizationParameters,
     ) -> Result<Vec<ReplenishmentRule>> {
         let products = sqlx::query!(
-            "SELECT DISTINCT product_id FROM location_inventory WHERE location_id = $1",
+            "SELECT DISTINCT product_id FROM location_items WHERE location_id = $1",
             location_id
         )
         .fetch_all(&self.pool)
@@ -842,6 +844,11 @@ impl InventoryOptimizationEngine for PostgresInventoryOptimizationEngine {
                         active: true,
                         created_at: Utc::now(),
                         updated_at: Utc::now(),
+                        economic_order_quantity: optimization_result.recommended_order_quantity,
+                        preferred_supplier_id: None,
+                        is_active: true,
+                        created_by: Uuid::new_v4(),
+                        last_triggered: None,
                     };
                     replenishment_rules.push(rule);
                 }
@@ -859,14 +866,14 @@ impl InventoryOptimizationEngine for PostgresInventoryOptimizationEngine {
         forecast_horizon_days: i32,
     ) -> Result<StockoutRiskAnalysis> {
         let current_stock = sqlx::query!(
-            "SELECT current_stock FROM location_inventory WHERE product_id = $1 AND location_id = $2",
+            "SELECT quantity_available FROM location_items WHERE product_id = $1 AND location_id = $2",
             product_id,
             location_id
         )
         .fetch_optional(&self.pool)
         .await
         .map_err(|e| MasterDataError::DatabaseError(e.to_string()))?
-        .map(|row| row.current_stock.map(|d| d.to_f64().unwrap_or(0.0)).unwrap_or(0.0))
+        .map(|row| row.quantity_available as f64)
         .unwrap_or(0.0);
 
         let forecast = self
@@ -994,14 +1001,14 @@ impl InventoryOptimizationEngine for PostgresInventoryOptimizationEngine {
     ) -> Result<TurnoverOptimizationResult> {
         let products = sqlx::query!(
             r#"
-            SELECT li.product_id, li.current_stock,
-                   COALESCE(SUM(CASE WHEN im.movement_type IN ('sales_shipment', 'transfer_out', 'production_consumption') THEN ABS(im.quantity) ELSE 0 END), 0) as annual_sales
-            FROM location_inventory li
+            SELECT li.product_id, li.quantity_available,
+                   COALESCE(SUM(CASE WHEN im.movement_type IN ('outbound', 'transfer') THEN ABS(im.quantity) ELSE 0 END), 0) as annual_sales
+            FROM location_items li
             LEFT JOIN inventory_movements im ON li.product_id = im.product_id
                       AND li.location_id = im.location_id
-                      AND im.movement_date >= NOW() - INTERVAL '365 days'
+                      AND im.transaction_date >= NOW() - INTERVAL '365 days'
             WHERE li.location_id = $1
-            GROUP BY li.product_id, li.current_stock
+            GROUP BY li.product_id, li.quantity_available
             "#,
             location_id
         )
@@ -1013,7 +1020,7 @@ impl InventoryOptimizationEngine for PostgresInventoryOptimizationEngine {
         let mut total_working_capital_reduction = 0.0;
 
         for product in products {
-            let current_stock_f64 = product.current_stock.map(|d| d.to_f64().unwrap_or(0.0)).unwrap_or(0.0);
+            let current_stock_f64 = product.quantity_available as f64;
             let annual_sales_f64 = product.annual_sales.map(|d| d.to_f64().unwrap_or(0.0)).unwrap_or(0.0);
 
             let current_turnover = if current_stock_f64 > 0.0 {

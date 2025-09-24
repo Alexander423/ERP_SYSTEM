@@ -28,6 +28,7 @@ pub use model::{
     InventoryValuation, InventoryKPI, InventoryDashboard,
     ReplenishmentSuggestion, InventorySearchCriteria, StockStatusFilter,
     InventoryAnalysisRequest, AnalysisType,
+    UpdateReplenishmentRuleRequest,
 };
 
 pub use repository::{
@@ -38,7 +39,6 @@ pub use repository::{
 pub use service::{
     InventoryService, DefaultInventoryService,
     CreateStockTransferRequest, CreateReservationRequest,
-    UpdateReplenishmentRuleRequest,
 };
 
 pub use analytics::{

@@ -4,8 +4,9 @@
 //! for multi-location scenarios and advanced analytics.
 
 use crate::inventory::model::*;
-use crate::product::model::AlertStatus;
-use crate::types::{ReservationType, OrderPriority, ValuationMethod};
+// use crate::product::model::AlertStatus; // Using inventory::model::AlertStatus instead
+use crate::types::ValuationMethod;
+use crate::utils::*;
 use crate::error::Result;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -126,8 +127,7 @@ impl PostgresInventoryRepository {
 #[async_trait]
 impl InventoryRepository for PostgresInventoryRepository {
     async fn get_location_inventory(&self, product_id: Uuid, location_id: Uuid) -> Result<LocationInventory> {
-        let inventory = sqlx::query_as!(
-            LocationInventory,
+        let row = sqlx::query!(
             r#"
             SELECT
                 id,
@@ -155,7 +155,7 @@ impl InventoryRepository for PostgresInventoryRepository {
                 storage_requirements,
                 created_at,
                 updated_at
-            FROM location_inventory
+            FROM location_items
             WHERE product_id = $1 AND location_id = $2
             "#,
             product_id,
@@ -164,12 +164,39 @@ impl InventoryRepository for PostgresInventoryRepository {
         .fetch_one(&self.pool)
         .await?;
 
+        let inventory = LocationInventory {
+            id: row.id,
+            product_id: row.product_id,
+            location_id: row.location_id,
+            location_name: row.location_name,
+            location_type: row.location_type,
+            quantity_available: row.quantity_available,
+            quantity_reserved: row.quantity_reserved,
+            quantity_on_order: row.quantity_on_order,
+            quantity_in_transit: row.quantity_in_transit,
+            reorder_point: row.reorder_point,
+            max_stock_level: row.max_stock_level,
+            min_stock_level: row.min_stock_level,
+            safety_stock: row.safety_stock,
+            economic_order_quantity: row.economic_order_quantity,
+            lead_time_days: row.lead_time_days,
+            storage_cost_per_unit: decimal_to_f64_or_default(Some(row.storage_cost_per_unit)),
+            handling_cost_per_unit: decimal_to_f64_or_default(Some(row.handling_cost_per_unit)),
+            last_counted_at: row.last_counted_at,
+            cycle_count_frequency_days: row.cycle_count_frequency_days,
+            abc_classification: row.abc_classification,
+            movement_velocity: row.movement_velocity,
+            seasonal_factors: json_to_f64_map(row.seasonal_factors),
+            storage_requirements: serde_json::from_value(row.storage_requirements.unwrap_or_default()).unwrap_or_default(),
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+        };
+
         Ok(inventory)
     }
 
     async fn get_all_location_inventories(&self, product_id: Uuid) -> Result<Vec<LocationInventory>> {
-        let inventories = sqlx::query_as!(
-            LocationInventory,
+        let rows = sqlx::query!(
             r#"
             SELECT
                 id,
@@ -197,7 +224,7 @@ impl InventoryRepository for PostgresInventoryRepository {
                 storage_requirements,
                 created_at,
                 updated_at
-            FROM location_inventory
+            FROM location_items
             WHERE product_id = $1
             ORDER BY location_name
             "#,
@@ -206,6 +233,38 @@ impl InventoryRepository for PostgresInventoryRepository {
         .fetch_all(&self.pool)
         .await?;
 
+        let mut inventories = Vec::new();
+        for row in rows {
+            let inventory = LocationInventory {
+                id: row.id,
+                product_id: row.product_id,
+                location_id: row.location_id,
+                location_name: row.location_name,
+                location_type: row.location_type,
+                quantity_available: row.quantity_available,
+                quantity_reserved: row.quantity_reserved,
+                quantity_on_order: row.quantity_on_order,
+                quantity_in_transit: row.quantity_in_transit,
+                reorder_point: row.reorder_point,
+                max_stock_level: row.max_stock_level,
+                min_stock_level: row.min_stock_level,
+                safety_stock: row.safety_stock,
+                economic_order_quantity: row.economic_order_quantity,
+                lead_time_days: row.lead_time_days,
+                storage_cost_per_unit: decimal_to_f64_or_default(Some(row.storage_cost_per_unit)),
+                handling_cost_per_unit: decimal_to_f64_or_default(Some(row.handling_cost_per_unit)),
+                last_counted_at: row.last_counted_at,
+                cycle_count_frequency_days: row.cycle_count_frequency_days,
+                abc_classification: row.abc_classification,
+                movement_velocity: row.movement_velocity,
+                seasonal_factors: json_to_f64_map(row.seasonal_factors),
+                storage_requirements: serde_json::from_value(row.storage_requirements.unwrap_or_default()).unwrap_or_default(),
+                created_at: row.created_at,
+                updated_at: row.updated_at,
+            };
+            inventories.push(inventory);
+        }
+
         Ok(inventories)
     }
 
@@ -213,55 +272,66 @@ impl InventoryRepository for PostgresInventoryRepository {
         let mut tx = self.pool.begin().await?;
 
         // Create inventory movement record
-        let movement = sqlx::query_as!(
-            InventoryMovement,
+        let row = sqlx::query!(
             r#"
-            INSERT INTO inventory_movements (
-                id, product_id, location_id, movement_type, quantity,
-                unit_cost, reference_document, reason, operator_id,
-                created_at, effective_date, audit_trail
+            INSERT INTO inventory_transactions (
+                id, transaction_number, transaction_type, transaction_date, product_id, location_id,
+                quantity_change, unit_cost, reference_document, reason_code
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+            VALUES ($1, CONCAT('TXN-', EXTRACT(EPOCH FROM NOW())), $2, $3, $4, $5, $6, $7, $8, $9)
             RETURNING
                 id,
                 product_id,
                 location_id,
-                movement_type as "movement_type: MovementType",
-                quantity,
+                transaction_type as "transaction_type!: String",
+                quantity_change,
                 unit_cost,
                 reference_document,
                 reference_number,
-                reason,
+                reason_code,
                 batch_number,
-                serial_numbers,
                 expiry_date,
-                operator_id,
-                operator_name,
+                created_by,
                 created_at,
-                effective_date,
-                audit_trail
+                transaction_date
             "#,
             Uuid::new_v4(),
+            request.movement_type as _,
+            request.effective_date.unwrap_or_else(Utc::now),
             product_id,
             location_id,
-            request.movement_type as MovementType,
             request.quantity_change,
-            request.unit_cost,
+            request.unit_cost.map(|v| rust_decimal::Decimal::from_f64_retain(v).unwrap_or_default()),
             request.reference_document,
-            request.reason,
-            request.operator_id,
-            Utc::now(),
-            request.effective_date.unwrap_or_else(Utc::now),
-            serde_json::json!({"updated_by": request.operator_id})
+            request.reason
         )
         .fetch_one(&mut *tx)
         .await?;
 
+        let movement = InventoryMovement {
+            id: row.id,
+            product_id: row.product_id,
+            location_id: row.location_id,
+            movement_type: convert_to_movement_type(Some(row.transaction_type)),
+            quantity: row.quantity_change,
+            unit_cost: Some(option_decimal_to_f64(row.unit_cost)),
+            reference_document: row.reference_document,
+            reference_number: row.reference_number,
+            reason: row.reason_code,
+            batch_number: row.batch_number,
+            serial_numbers: Some(vec![]),
+            expiry_date: row.expiry_date.map(|d| d.and_hms_opt(0, 0, 0).unwrap().and_utc()),
+            operator_id: row.created_by,
+            operator_name: String::new(),
+            created_at: row.created_at,
+            effective_date: row.transaction_date,
+            audit_trail: string_to_json_map(None),
+        };
+
         // Update inventory levels
-        let updated_inventory = sqlx::query_as!(
-            LocationInventory,
+        let row = sqlx::query!(
             r#"
-            UPDATE location_inventory
+            UPDATE location_items
             SET
                 quantity_available = quantity_available + $3,
                 updated_at = $4
@@ -271,7 +341,7 @@ impl InventoryRepository for PostgresInventoryRepository {
                 product_id,
                 location_id,
                 location_name,
-                location_type as "location_type: LocationType",
+                location_type as "location_type: String",
                 quantity_available,
                 quantity_reserved,
                 quantity_on_order,
@@ -286,8 +356,8 @@ impl InventoryRepository for PostgresInventoryRepository {
                 handling_cost_per_unit,
                 last_counted_at,
                 cycle_count_frequency_days,
-                abc_classification as "abc_classification: ABCClassification",
-                movement_velocity as "movement_velocity: MovementVelocity",
+                abc_classification as "abc_classification: String",
+                movement_velocity as "movement_velocity: String",
                 seasonal_factors,
                 storage_requirements,
                 created_at,
@@ -301,20 +371,47 @@ impl InventoryRepository for PostgresInventoryRepository {
         .fetch_one(&mut *tx)
         .await?;
 
+        let updated_inventory = LocationInventory {
+            id: row.id,
+            product_id: row.product_id,
+            location_id: row.location_id,
+            location_name: row.location_name,
+            location_type: convert_to_location_type(row.location_type).unwrap_or(LocationType::Warehouse),
+            quantity_available: row.quantity_available,
+            quantity_reserved: row.quantity_reserved,
+            quantity_on_order: row.quantity_on_order,
+            quantity_in_transit: row.quantity_in_transit,
+            reorder_point: row.reorder_point,
+            max_stock_level: row.max_stock_level,
+            min_stock_level: row.min_stock_level,
+            safety_stock: row.safety_stock,
+            economic_order_quantity: row.economic_order_quantity,
+            lead_time_days: row.lead_time_days,
+            storage_cost_per_unit: sqlx_decimal_option_to_f64_option(row.storage_cost_per_unit),
+            handling_cost_per_unit: sqlx_decimal_option_to_f64_option(row.handling_cost_per_unit),
+            last_counted_at: row.last_counted_at,
+            cycle_count_frequency_days: row.cycle_count_frequency_days,
+            abc_classification: convert_to_abc_classification(Some(row.abc_classification)).unwrap_or(ABCClassification::B),
+            movement_velocity: convert_to_movement_velocity(Some(row.movement_velocity)).unwrap_or(MovementVelocity::Medium),
+            seasonal_factors: json_value_to_hashmap_f64(row.seasonal_factors),
+            storage_requirements: StorageRequirements::default(),
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+        };
+
         tx.commit().await?;
         Ok(updated_inventory)
     }
 
     async fn get_inventory_by_location(&self, location_id: Uuid) -> Result<Vec<LocationInventory>> {
-        let inventories = sqlx::query_as!(
-            LocationInventory,
+        let rows = sqlx::query!(
             r#"
             SELECT
                 li.id,
                 li.product_id,
                 li.location_id,
                 li.location_name,
-                li.location_type as "location_type: LocationType",
+                li.location_type,
                 li.quantity_available,
                 li.quantity_reserved,
                 li.quantity_on_order,
@@ -327,15 +424,15 @@ impl InventoryRepository for PostgresInventoryRepository {
                 li.lead_time_days,
                 li.storage_cost_per_unit,
                 li.handling_cost_per_unit,
-                last_counted_at,
-                cycle_count_frequency_days,
-                li.abc_classification as "abc_classification: ABCClassification",
-                li.movement_velocity as "movement_velocity: MovementVelocity",
+                li.last_counted_at,
+                li.cycle_count_frequency_days,
+                li.abc_classification::text as abc_classification,
+                li.movement_velocity::text as movement_velocity,
                 li.seasonal_factors,
                 li.storage_requirements,
                 li.created_at,
                 li.updated_at
-            FROM location_inventory li
+            FROM location_items li
             WHERE li.location_id = $1
             ORDER BY li.quantity_available DESC
             "#,
@@ -343,6 +440,38 @@ impl InventoryRepository for PostgresInventoryRepository {
         )
         .fetch_all(&self.pool)
         .await?;
+
+        let mut inventories = Vec::new();
+        for row in rows {
+            let inventory = LocationInventory {
+                id: row.id,
+                product_id: row.product_id,
+                location_id: row.location_id,
+                location_name: row.location_name,
+                location_type: row.location_type.map(string_to_location_type),
+                quantity_available: row.quantity_available,
+                quantity_reserved: row.quantity_reserved,
+                quantity_on_order: row.quantity_on_order,
+                quantity_in_transit: row.quantity_in_transit,
+                reorder_point: row.reorder_point,
+                max_stock_level: row.max_stock_level,
+                min_stock_level: row.min_stock_level,
+                safety_stock: row.safety_stock,
+                economic_order_quantity: row.economic_order_quantity,
+                lead_time_days: row.lead_time_days,
+                storage_cost_per_unit: sqlx_decimal_option_to_f64_option(row.storage_cost_per_unit),
+                handling_cost_per_unit: sqlx_decimal_option_to_f64_option(row.handling_cost_per_unit),
+                last_counted_at: row.last_counted_at,
+                cycle_count_frequency_days: row.cycle_count_frequency_days,
+                abc_classification: convert_to_abc_classification(Some(row.abc_classification)).unwrap_or(ABCClassification::B),
+                movement_velocity: convert_to_movement_velocity(Some(row.movement_velocity)).unwrap_or(MovementVelocity::Medium),
+                seasonal_factors: json_to_f64_map(row.seasonal_factors),
+                storage_requirements: json_to_storage_requirements(row.storage_requirements),
+                created_at: row.created_at,
+                updated_at: row.updated_at,
+            };
+            inventories.push(inventory);
+        }
 
         Ok(inventories)
     }
@@ -370,13 +499,13 @@ impl InventoryRepository for PostgresInventoryRepository {
                 li.handling_cost_per_unit,
                 last_counted_at,
                 cycle_count_frequency_days,
-                li.abc_classification,
-                li.movement_velocity,
+                li.abc_classification::text as abc_classification,
+                li.movement_velocity::text as movement_velocity,
                 li.seasonal_factors,
                 li.storage_requirements,
                 li.created_at,
                 li.updated_at
-            FROM location_inventory li
+            FROM location_items li
             WHERE 1=1
             "#
         );
@@ -426,14 +555,14 @@ impl InventoryRepository for PostgresInventoryRepository {
                 safety_stock: row.try_get("safety_stock")?,
                 economic_order_quantity: row.try_get("economic_order_quantity")?,
                 lead_time_days: row.try_get("lead_time_days")?,
-                storage_cost_per_unit: row.try_get("storage_cost_per_unit")?,
-                handling_cost_per_unit: row.try_get("handling_cost_per_unit")?,
+                storage_cost_per_unit: decimal_to_f64_or_default(row.try_get("storage_cost_per_unit")?),
+                handling_cost_per_unit: decimal_to_f64_or_default(row.try_get("handling_cost_per_unit")?),
                 last_counted_at: row.try_get("last_counted_at")?,
                 cycle_count_frequency_days: row.try_get("cycle_count_frequency_days")?,
                 abc_classification: row.try_get("abc_classification")?,
                 movement_velocity: row.try_get("movement_velocity")?,
-                seasonal_factors: row.try_get("seasonal_factors")?,
-                storage_requirements: row.try_get("storage_requirements")?,
+                seasonal_factors: json_value_to_hashmap_f64(row.try_get("seasonal_factors")?),
+                storage_requirements: StorageRequirements::default(),
                 created_at: row.try_get("created_at")?,
                 updated_at: row.try_get("updated_at")?,
             };
@@ -444,69 +573,83 @@ impl InventoryRepository for PostgresInventoryRepository {
     }
 
     async fn create_inventory_movement(&self, movement: InventoryMovement) -> Result<InventoryMovement> {
-        let created_movement = sqlx::query_as!(
-            InventoryMovement,
+        let row = sqlx::query!(
             r#"
-            INSERT INTO inventory_movements (
-                id, product_id, location_id, movement_type, quantity,
-                unit_cost, reference_document, reference_number, reason,
-                batch_number, serial_numbers, expiry_date, operator_id,
-                operator_name, created_at, effective_date, audit_trail
+            INSERT INTO inventory_transactions (
+                id, transaction_number, transaction_type, product_id, location_id, quantity_change,
+                unit_cost, reference_document, reference_number, reason_code,
+                batch_number, lot_number, expiry_date, created_by,
+                notes, created_at, transaction_date
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+            VALUES ($1, CONCAT('TXN-', EXTRACT(EPOCH FROM NOW())), $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
             RETURNING
                 id,
                 product_id,
                 location_id,
-                movement_type as "movement_type: MovementType",
-                quantity,
+                transaction_type as "transaction_type!: String",
+                quantity_change,
                 unit_cost,
                 reference_document,
                 reference_number,
-                reason,
+                reason_code,
                 batch_number,
-                serial_numbers,
                 expiry_date,
-                operator_id,
-                operator_name,
+                created_by,
                 created_at,
-                effective_date,
-                audit_trail
+                transaction_date
             "#,
             movement.id,
+            movement.movement_type as _,
             movement.product_id,
             movement.location_id,
-            movement.movement_type as MovementType,
             movement.quantity,
-            movement.unit_cost,
+            movement.unit_cost.map(|v| rust_decimal::Decimal::from_f64_retain(v).unwrap_or_default()),
             movement.reference_document,
             movement.reference_number,
             movement.reason,
             movement.batch_number,
-            movement.serial_numbers,
-            movement.expiry_date,
+            movement.batch_number, // Using batch_number for lot_number
+            movement.expiry_date.map(|dt| dt.date_naive()),
             movement.operator_id,
-            movement.operator_name,
+            json_to_string_safe(Some(serde_json::to_value(&movement.audit_trail).unwrap_or_default())), // Convert HashMap to JSON string
             movement.created_at,
-            movement.effective_date,
-            movement.audit_trail
+            movement.effective_date
         )
         .fetch_one(&self.pool)
         .await?;
+
+        let created_movement = InventoryMovement {
+            id: row.id,
+            product_id: row.product_id,
+            location_id: row.location_id,
+            movement_type: convert_to_movement_type(Some(row.transaction_type)),
+            quantity: row.quantity_change,
+            unit_cost: Some(option_decimal_to_f64(row.unit_cost)),
+            reference_document: row.reference_document,
+            reference_number: row.reference_number,
+            reason: row.reason_code,
+            batch_number: row.batch_number,
+            serial_numbers: Some(vec![]),
+            expiry_date: row.expiry_date.map(|d| d.and_hms_opt(0, 0, 0).unwrap().and_utc()),
+            operator_id: row.created_by,
+            operator_name: String::new(),
+            created_at: row.created_at,
+            effective_date: row.transaction_date,
+            audit_trail: string_to_json_map(None),
+        };
 
         Ok(created_movement)
     }
 
     async fn get_inventory_movements(&self, product_id: Uuid, location_id: Option<Uuid>, limit: Option<i32>) -> Result<Vec<InventoryMovement>> {
         let movements = if let Some(loc_id) = location_id {
-            sqlx::query_as!(
-                InventoryMovement,
+            let rows = sqlx::query!(
                 r#"
                 SELECT
                     id,
                     product_id,
                     location_id,
-                    movement_type as "movement_type: MovementType",
+                    movement_type::text,
                     quantity,
                     unit_cost,
                     reference_document,
@@ -527,19 +670,38 @@ impl InventoryRepository for PostgresInventoryRepository {
                 "#,
                 product_id,
                 loc_id,
-                limit.unwrap_or(100)
+                limit.unwrap_or(100) as i64
             )
             .fetch_all(&self.pool)
-            .await?
+            .await?;
+
+            rows.into_iter().map(|row| InventoryMovement {
+                id: sqlx_option_uuid_to_uuid(row.id).unwrap_or_else(|_| Uuid::new_v4()),
+                product_id: sqlx_option_uuid_to_uuid(row.product_id).unwrap_or_else(|_| Uuid::new_v4()),
+                location_id: sqlx_option_uuid_to_uuid(row.location_id).unwrap_or_else(|_| Uuid::new_v4()),
+                movement_type: convert_to_movement_type(Some(row.movement_type)),
+                quantity: sqlx_option_i32_to_i32(row.quantity).unwrap_or(0),
+                unit_cost: sqlx_decimal_option_to_f64_option(row.unit_cost),
+                reference_document: row.reference_document,
+                reference_number: row.reference_number,
+                reason: row.reason.unwrap_or_default(),
+                batch_number: row.batch_number,
+                serial_numbers: row.serial_numbers.flatten(),
+                expiry_date: naive_date_to_utc_datetime(row.expiry_date),
+                operator_id: row.operator_id.unwrap_or_else(Uuid::new_v4),
+                operator_name: row.operator_name.unwrap_or_default(),
+                created_at: sqlx_option_datetime_to_datetime(row.created_at).unwrap_or_else(|_| Utc::now()),
+                effective_date: sqlx_option_datetime_to_datetime(row.effective_date).unwrap_or_else(|_| Utc::now()),
+                audit_trail: string_to_json_map(row.audit_trail),
+            }).collect()
         } else {
-            sqlx::query_as!(
-                InventoryMovement,
+            let rows = sqlx::query!(
                 r#"
                 SELECT
                     id,
                     product_id,
                     location_id,
-                    movement_type as "movement_type: MovementType",
+                    movement_type::text,
                     quantity,
                     unit_cost,
                     reference_document,
@@ -559,10 +721,30 @@ impl InventoryRepository for PostgresInventoryRepository {
                 LIMIT $2
                 "#,
                 product_id,
-                limit.unwrap_or(100)
+                limit.unwrap_or(100) as i64
             )
             .fetch_all(&self.pool)
-            .await?
+            .await?;
+
+            rows.into_iter().map(|row| InventoryMovement {
+                id: sqlx_option_uuid_to_uuid(row.id).unwrap_or_else(|_| Uuid::new_v4()),
+                product_id: sqlx_option_uuid_to_uuid(row.product_id).unwrap_or_else(|_| Uuid::new_v4()),
+                location_id: sqlx_option_uuid_to_uuid(row.location_id).unwrap_or_else(|_| Uuid::new_v4()),
+                movement_type: convert_to_movement_type(Some(row.movement_type)),
+                quantity: sqlx_option_i32_to_i32(row.quantity).unwrap_or(0),
+                unit_cost: sqlx_decimal_option_to_f64_option(row.unit_cost),
+                reference_document: row.reference_document,
+                reference_number: row.reference_number,
+                reason: row.reason.unwrap_or_default(),
+                batch_number: row.batch_number,
+                serial_numbers: row.serial_numbers.flatten(),
+                expiry_date: naive_date_to_utc_datetime(row.expiry_date),
+                operator_id: row.operator_id.unwrap_or_else(Uuid::new_v4),
+                operator_name: row.operator_name.unwrap_or_default(),
+                created_at: sqlx_option_datetime_to_datetime(row.created_at).unwrap_or_else(|_| Utc::now()),
+                effective_date: sqlx_option_datetime_to_datetime(row.effective_date).unwrap_or_else(|_| Utc::now()),
+                audit_trail: string_to_json_map(row.audit_trail),
+            }).collect()
         };
 
         Ok(movements)
@@ -578,18 +760,18 @@ impl InventoryRepository for PostgresInventoryRepository {
                 location_id,
                 movement_type as "movement_type: MovementType",
                 quantity,
-                unit_cost,
+                unit_cost as "unit_cost: Option<f64>",
                 reference_document,
                 reference_number,
                 reason,
                 batch_number,
-                serial_numbers,
-                expiry_date,
+                serial_numbers as "serial_numbers: Option<Vec<String>>",
+                expiry_date as "expiry_date: Option<DateTime<Utc>>",
                 operator_id,
                 operator_name,
                 created_at,
                 effective_date,
-                audit_trail
+                audit_trail as "audit_trail: HashMap<String, serde_json::Value>"
             FROM inventory_movements
             WHERE location_id = $1
             AND effective_date BETWEEN $2 AND $3
@@ -619,11 +801,23 @@ impl InventoryRepository for PostgresInventoryRepository {
             to_location_id: Uuid::new_v4(),
             product_id: Uuid::new_v4(),
             quantity: 0,
-            status,
+            quantity_shipped: None,
+            quantity_received: None,
+            status: status.clone(),
             priority: TransferPriority::Normal,
+            reason: "Status update".to_string(),
+            requested_by: Uuid::new_v4(),
+            approved_by: None,
+            shipped_by: None,
+            received_by: None,
             requested_date: chrono::Utc::now(),
+            approved_date: None,
             shipped_date: if status == TransferStatus::InTransit { Some(chrono::Utc::now()) } else { None },
             received_date: if status == TransferStatus::Completed { Some(chrono::Utc::now()) } else { None },
+            actual_delivery_date: None,
+            tracking_number: None,
+            carrier: None,
+            shipping_cost: None,
             notes,
             created_at: chrono::Utc::now(),
             created_by: Uuid::new_v4(),
@@ -638,11 +832,23 @@ impl InventoryRepository for PostgresInventoryRepository {
             to_location_id: Uuid::new_v4(),
             product_id: Uuid::new_v4(),
             quantity: 100,
+            quantity_shipped: None,
+            quantity_received: None,
             status: TransferStatus::Pending,
             priority: TransferPriority::Normal,
+            reason: "Generated transfer".to_string(),
+            requested_by: Uuid::new_v4(),
+            approved_by: None,
+            shipped_by: None,
+            received_by: None,
             requested_date: chrono::Utc::now(),
+            approved_date: None,
             shipped_date: None,
             received_date: None,
+            actual_delivery_date: None,
+            tracking_number: None,
+            carrier: None,
+            shipping_cost: None,
             notes: Some("Generated transfer".to_string()),
             created_at: chrono::Utc::now(),
             created_by: Uuid::new_v4(),
@@ -662,11 +868,23 @@ impl InventoryRepository for PostgresInventoryRepository {
             to_location_id: Uuid::new_v4(),
             product_id: Uuid::new_v4(),
             quantity: quantity_received,
+            quantity_shipped: Some(quantity_received),
+            quantity_received: Some(quantity_received),
             status: TransferStatus::Completed,
             priority: TransferPriority::Normal,
+            reason: "Transfer receipt".to_string(),
+            requested_by: Uuid::new_v4(),
+            approved_by: Some(received_by),
+            shipped_by: Some(received_by),
+            received_by: Some(received_by),
             requested_date: chrono::Utc::now(),
+            approved_date: Some(chrono::Utc::now()),
             shipped_date: Some(chrono::Utc::now()),
             received_date: Some(chrono::Utc::now()),
+            actual_delivery_date: Some(chrono::Utc::now()),
+            tracking_number: None,
+            carrier: None,
+            shipping_cost: None,
             notes: Some(format!("Received by {}", received_by)),
             created_at: chrono::Utc::now(),
             created_by: received_by,
@@ -684,16 +902,24 @@ impl InventoryRepository for PostgresInventoryRepository {
             id: reservation_id,
             product_id: Uuid::new_v4(),
             location_id: Uuid::new_v4(),
-            quantity: 0,
-            reservation_type: ReservationType::SalesOrder,
-            reference_id: Uuid::new_v4(),
+            quantity_reserved: 0,
+            reservation_status: ReservationStatus::Cancelled,
             priority: ReservationPriority::Normal,
-            status: ReservationStatus::Cancelled,
-            reserved_until: chrono::Utc::now(),
+            reference_id: Uuid::new_v4(),
+            reference_type: "SalesOrder".to_string(),
+            expiry_date: Some(chrono::Utc::now()),
             created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            notes: None,
             created_by: released_by,
+            released_at: Some(chrono::Utc::now()),
+            released_by: Some(released_by),
+            quantity: 0,
+            reservation_type: "manual".to_string(),
+            status: ReservationStatus::Cancelled,
+            reserved_until: Some(chrono::Utc::now()),
             fulfilled_at: None,
-            fulfilled_quantity: None,
+            fulfilled_quantity: 0,
         })
     }
 
@@ -718,17 +944,28 @@ impl InventoryRepository for PostgresInventoryRepository {
             id: rule_id,
             product_id: request.product_id.unwrap_or(Uuid::new_v4()),
             location_id: request.location_id.unwrap_or(Uuid::new_v4()),
+            rule_type: ReplenishmentType::ReorderPoint,
             reorder_point: request.reorder_point.unwrap_or(50),
+            reorder_quantity: request.economic_order_quantity.unwrap_or(100.0) as i32,
             max_stock_level: request.max_stock_level.unwrap_or(1000),
-            economic_order_quantity: request.economic_order_quantity.unwrap_or(100),
-            lead_time_days: request.lead_time_days.unwrap_or(7),
+            min_stock_level: 0,
             safety_stock: request.safety_stock.unwrap_or(25),
+            lead_time_days: request.lead_time_days.unwrap_or(7),
+            review_period_days: 30,
+            service_level_target: 95.0,
+            cost_per_order: 10.0,
+            carrying_cost_rate: 0.25,
+            automatic_ordering: request.is_active.unwrap_or(true),
+            supplier_id: request.preferred_supplier_id,
+            preferred_vendor: None,
+            active: request.is_active.unwrap_or(true),
+            economic_order_quantity: request.economic_order_quantity.unwrap_or(100.0),
             preferred_supplier_id: request.preferred_supplier_id,
             is_active: request.is_active.unwrap_or(true),
-            last_triggered: None,
+            created_by: Uuid::new_v4(),
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
-            created_by: Uuid::new_v4(),
+            last_triggered: None,
         })
     }
 
@@ -738,17 +975,28 @@ impl InventoryRepository for PostgresInventoryRepository {
             id: Uuid::new_v4(),
             product_id,
             location_id,
+            rule_type: ReplenishmentType::ReorderPoint,
             reorder_point: 50,
+            reorder_quantity: 100,
             max_stock_level: 1000,
-            economic_order_quantity: 100,
-            lead_time_days: 7,
+            min_stock_level: 0,
             safety_stock: 25,
+            lead_time_days: 7,
+            review_period_days: 30,
+            service_level_target: 95.0,
+            cost_per_order: 10.0,
+            carrying_cost_rate: 0.25,
+            automatic_ordering: true,
+            supplier_id: Some(Uuid::new_v4()),
+            preferred_vendor: None,
+            active: true,
+            economic_order_quantity: 100.0,
             preferred_supplier_id: Some(Uuid::new_v4()),
             is_active: true,
-            last_triggered: None,
+            created_by: Uuid::new_v4(),
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
-            created_by: Uuid::new_v4(),
+            last_triggered: None,
         })
     }
 
@@ -778,19 +1026,25 @@ impl InventoryRepository for PostgresInventoryRepository {
             id: order_id,
             order_number: format!("PO-{}", order_id.to_string()[..8].to_uppercase()),
             supplier_id: Uuid::new_v4(),
-            status,
-            priority: OrderPriority::Normal,
+            supplier_name: "Default Supplier".to_string(),
+            location_id: Uuid::new_v4(),
+            status: status.clone(),
             order_date: chrono::Utc::now(),
-            expected_delivery_date: chrono::Utc::now() + chrono::Duration::days(7),
-            total_amount: rust_decimal::Decimal::new(10000, 2), // $100.00
+            expected_delivery_date: Some(chrono::Utc::now() + chrono::Duration::days(7)),
+            actual_delivery_date: None,
+            total_amount: decimal_to_f64_direct_safe(rust_decimal::Decimal::new(10000, 2)), // $100.00
             currency: "USD".to_string(),
-            payment_terms: "NET30".to_string(),
-            shipping_address: None,
-            billing_address: None,
+            payment_terms: Some("NET30".to_string()),
+            shipping_terms: None,
+            priority: Some("Normal".to_string()),
+            approved_by: None,
+            tracking_number: None,
             notes: Some(format!("Status updated to {:?}", status)),
+            created_by: Uuid::new_v4(),
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
-            created_by: Uuid::new_v4(),
+            shipping_address: None,
+            billing_address: None,
         })
     }
 
@@ -800,19 +1054,25 @@ impl InventoryRepository for PostgresInventoryRepository {
             id: order_id,
             order_number: format!("PO-{}", order_id.to_string()[..8].to_uppercase()),
             supplier_id: Uuid::new_v4(),
+            supplier_name: "Default Supplier".to_string(),
+            location_id: Uuid::new_v4(),
             status: OrderStatus::Pending,
-            priority: OrderPriority::Normal,
             order_date: chrono::Utc::now(),
-            expected_delivery_date: chrono::Utc::now() + chrono::Duration::days(7),
-            total_amount: rust_decimal::Decimal::new(10000, 2), // $100.00
+            expected_delivery_date: Some(chrono::Utc::now() + chrono::Duration::days(7)),
+            actual_delivery_date: None,
+            total_amount: decimal_to_f64_direct_safe(rust_decimal::Decimal::new(10000, 2)), // $100.00
             currency: "USD".to_string(),
-            payment_terms: "NET30".to_string(),
-            shipping_address: None,
-            billing_address: None,
+            payment_terms: Some("NET30".to_string()),
+            shipping_terms: None,
+            priority: Some("Normal".to_string()),
+            approved_by: None,
+            tracking_number: None,
             notes: Some("Generated purchase order".to_string()),
+            created_by: Uuid::new_v4(),
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
-            created_by: Uuid::new_v4(),
+            shipping_address: None,
+            billing_address: None,
         })
     }
 
@@ -898,15 +1158,28 @@ impl InventoryRepository for PostgresInventoryRepository {
             id: count_id,
             location_id: Uuid::new_v4(),
             count_date: chrono::Utc::now().date_naive(),
-            status,
+            status: status.clone(),
             total_items: 100,
             counted_items: if status == CountStatus::Completed { 100 } else { 0 },
             variance_items: 0,
+            variance: 0,
             adjustment_required: false,
+            adjustment_date: None,
+            adjustment_by: None,
+            approval_required: false,
+            approved_by: None,
+            approved_date: None,
             notes: Some(format!("Status updated to {:?}", status)),
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
             created_by: Uuid::new_v4(),
+            counter_name: "System Counter".to_string(),
+            book_quantity: 100,
+            counted_quantity: if status == CountStatus::Completed { 100 } else { 0 },
+            variance_percentage: 0.0,
+            variance_value: 0.0,
+            count_status: status.clone(),
+            adjustment_applied: false,
         })
     }
 
@@ -925,11 +1198,24 @@ impl InventoryRepository for PostgresInventoryRepository {
             total_items: 100,
             counted_items: 100,
             variance_items: 5,
+            variance: 5,
             adjustment_required: false,
+            adjustment_date: Some(chrono::Utc::now()),
+            adjustment_by: Some(adjustment_by),
+            approval_required: false,
+            approved_by: Some(adjustment_by),
+            approved_date: Some(chrono::Utc::now()),
             notes: Some(format!("Adjustment applied by {}", adjustment_by)),
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
             created_by: adjustment_by,
+            counter_name: "System Counter".to_string(),
+            book_quantity: 95,
+            counted_quantity: 100,
+            variance_percentage: 5.26,
+            variance_value: 25.0,
+            count_status: CountStatus::Completed,
+            adjustment_applied: true,
         })
     }
 
@@ -947,17 +1233,17 @@ impl InventoryRepository for PostgresInventoryRepository {
             valuation_date: chrono::Utc::now(),
             valuation_method: ValuationMethod::WeightedAverage,
             quantity: 100,
-            unit_cost: rust_decimal::Decimal::new(2500, 2), // $25.00
-            total_value: rust_decimal::Decimal::new(250000, 2), // $2500.00
-            average_cost: rust_decimal::Decimal::new(2500, 2),
-            fifo_cost: rust_decimal::Decimal::new(2400, 2),
-            lifo_cost: rust_decimal::Decimal::new(2600, 2),
-            standard_cost: rust_decimal::Decimal::new(2500, 2),
-            market_value: rust_decimal::Decimal::new(2550, 2),
-            replacement_cost: rust_decimal::Decimal::new(2520, 2),
-            net_realizable_value: rust_decimal::Decimal::new(2480, 2),
-            obsolescence_reserve: rust_decimal::Decimal::new(50, 2),
-            shrinkage_reserve: rust_decimal::Decimal::new(25, 2),
+            unit_cost: 25.00, // $25.00
+            total_value: 2500.00, // $2500.00
+            average_cost: 25.00,
+            fifo_cost: 24.00,
+            lifo_cost: 26.00,
+            standard_cost: 25.00,
+            market_value: 25.50,
+            replacement_cost: 25.20,
+            net_realizable_value: 24.80,
+            obsolescence_reserve: 0.50,
+            shrinkage_reserve: 0.25,
             created_at: chrono::Utc::now(),
         })
     }
@@ -979,17 +1265,21 @@ impl InventoryRepository for PostgresInventoryRepository {
             location_id: _location_id,
             period_start: _period_start,
             period_end: _period_end,
-            inventory_turnover: rust_decimal::Decimal::new(450, 2), // 4.5
-            inventory_turnover_days: rust_decimal::Decimal::new(8111, 2), // 81.11 days
-            stockout_rate: rust_decimal::Decimal::new(250, 4), // 2.5%
-            carrying_cost_rate: rust_decimal::Decimal::new(1200, 4), // 12%
-            gross_margin_rate: rust_decimal::Decimal::new(3500, 4), // 35%
-            inventory_accuracy: rust_decimal::Decimal::new(9850, 4), // 98.5%
-            obsolete_inventory_rate: rust_decimal::Decimal::new(150, 4), // 1.5%
-            dead_stock_rate: rust_decimal::Decimal::new(75, 4), // 0.75%
-            fill_rate: rust_decimal::Decimal::new(9650, 4), // 96.5%
-            average_inventory_level: rust_decimal::Decimal::new(125000, 2), // $1,250.00
-            total_inventory_value: rust_decimal::Decimal::new(500000, 2), // $5,000.00
+            total_value: 5000.00,
+            turnover_ratio: 4.5,
+            stockout_rate: 0.025, // 2.5%
+            fill_rate: 0.965, // 96.5%
+            carrying_cost: 1200.00,
+            accuracy_percentage: 98.5,
+            inventory_turnover: 4.5,
+            inventory_turnover_days: 81.11,
+            carrying_cost_rate: 0.12, // 12%
+            gross_margin_rate: 0.35, // 35%
+            inventory_accuracy: 98.5,
+            obsolete_inventory_rate: 0.015, // 1.5%
+            dead_stock_rate: 0.0075, // 0.75%
+            average_inventory_level: 1250.00,
+            total_inventory_value: 5000.00,
             calculated_at: chrono::Utc::now(),
         })
     }
@@ -1022,18 +1312,19 @@ impl InventoryRepository for PostgresInventoryRepository {
             location_id: Uuid::new_v4(),
             forecast_date: chrono::Utc::now(),
             forecast_horizon_days: 30,
-            predicted_demand: rust_decimal::Decimal::new(15000, 2), // 150.00
-            predicted_supply: rust_decimal::Decimal::new(16000, 2), // 160.00
-            predicted_stock_level: rust_decimal::Decimal::new(50000, 2), // 500.00
-            confidence_level: rust_decimal::Decimal::new(8500, 4), // 85%
-            confidence_lower: rust_decimal::Decimal::new(12000, 2), // 120.00
-            confidence_upper: rust_decimal::Decimal::new(18000, 2), // 180.00
+            predicted_demand: 150.00,
+            predicted_supply: 160.00,
+            predicted_stock_level: 500.00,
+            confidence_level: 0.85, // 85%
+            confidence_lower: 120.00,
+            confidence_upper: 180.00,
             forecast_method: ForecastMethod::MovingAverage,
-            seasonal_index: rust_decimal::Decimal::new(11000, 4), // 1.1
-            seasonal_component: rust_decimal::Decimal::new(1500, 2), // 15.00
-            trend_factor: rust_decimal::Decimal::new(10200, 4), // 1.02
-            trend_component: rust_decimal::Decimal::new(300, 2), // 3.00
-            external_factors: None,
+            seasonal_index: 1.1,
+            seasonal_component: 15.00,
+            trend_factor: 1.02,
+            trend_component: 3.00,
+            external_factors: std::collections::HashMap::new(),
+            accuracy_metrics: accuracy.clone(),
             accuracy_score: accuracy.accuracy_percentage,
             model_version: "v1.1".to_string(),
             created_at: chrono::Utc::now(),
@@ -1045,20 +1336,25 @@ impl InventoryRepository for PostgresInventoryRepository {
         Ok(InventoryDashboard {
             id: Uuid::new_v4(),
             location_id,
+            total_products: 1250,
+            low_stock_alerts: 45,
+            stockout_alerts: 15,
+            pending_transfers: 12,
+            total_inventory_value: 1000000.00,
+            top_moving_products: vec!["Product A".to_string(), "Product B".to_string()],
+            recent_alerts: vec![],
             snapshot_date: chrono::Utc::now(),
-            total_inventory_value: rust_decimal::Decimal::new(100000000, 2), // $1,000,000.00
             total_sku_count: 1250,
             stockout_count: 15,
             low_stock_count: 45,
             excess_stock_count: 8,
             slow_moving_count: 22,
-            inventory_turnover: rust_decimal::Decimal::new(680, 2), // 6.8
-            fill_rate: rust_decimal::Decimal::new(9720, 4), // 97.2%
-            carrying_cost_percentage: rust_decimal::Decimal::new(1150, 4), // 11.5%
-            abc_analysis: HashMap::new(),
-            top_movers: vec![],
-            recent_alerts: vec![],
-            pending_orders: vec![],
+            inventory_turnover: 6.8,
+            fill_rate: 0.972, // 97.2%
+            carrying_cost_percentage: 0.115, // 11.5%
+            abc_analysis: std::collections::HashMap::new(),
+            top_movers: vec!["Product A".to_string(), "Product B".to_string()],
+            pending_orders: vec!["Order 1".to_string(), "Order 2".to_string()],
             created_at: chrono::Utc::now(),
         })
     }
